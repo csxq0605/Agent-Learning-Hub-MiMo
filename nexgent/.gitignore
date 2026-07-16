@@ -24,3 +24,5 @@ coverage.json
 
 # IDE
 .claude/
+# Local visual brainstorming sessions
+.superpowers/
