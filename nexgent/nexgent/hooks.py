@@ -12,6 +12,8 @@ Implements Ch8 patterns:
 import json
 import logging
 import subprocess
+import shlex
+import sys
 import platform
 import threading
 from dataclasses import dataclass, field
@@ -206,9 +208,12 @@ class HookRunner:
 
         try:
             # Ch8: command hooks execute via subprocess
+            hook_command = config.command
+            if platform.system() != "Windows" and hook_command.startswith("python "):
+                hook_command = shlex.quote(sys.executable) + hook_command[len("python"):]
             if platform.system() == "Windows":
                 result = subprocess.run(
-                    config.command,
+                    hook_command,
                     shell=True,
                     input=hook_input,
                     capture_output=True,
@@ -219,7 +224,7 @@ class HookRunner:
                 )
             else:
                 result = subprocess.run(
-                    config.command,
+                    hook_command,
                     shell=True,
                     input=hook_input,
                     capture_output=True,

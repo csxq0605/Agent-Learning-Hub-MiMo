@@ -11,6 +11,14 @@ from .registry import ToolDef
 from ..permissions import Permission
 from ..input_utils import rich_input as _rich_input
 
+_interaction_broker = None
+
+
+def set_interaction_broker(broker):
+    """Bind a frontend-neutral broker for Agent questions."""
+    global _interaction_broker
+    _interaction_broker = broker
+
 
 def ask_user_question(params: dict) -> str:
     """Ask the user a question with multiple choice options.
@@ -30,6 +38,24 @@ def ask_user_question(params: dict) -> str:
 
     if not options:
         return json.dumps({"error": "No options provided"})
+
+    if _interaction_broker is not None:
+        try:
+            from ..runtime.interactions import InteractionKind, InteractionRequest
+            response = _interaction_broker.request(InteractionRequest(
+                InteractionKind.USER_INPUT,
+                question,
+                {"options": options, "multi_select": multi_select},
+            ))
+            if not response.accepted:
+                return json.dumps({"error": "User cancelled"})
+            selected_indices = response.value if isinstance(response.value, list) else [response.value]
+            selected = [options[index] for index in selected_indices if isinstance(index, int) and 0 <= index < len(options)]
+            if not selected:
+                return json.dumps({"error": "No selection made"})
+            return json.dumps({"selected": selected if multi_select else selected[0]})
+        except Exception:
+            return json.dumps({"error": "Frontend interaction failed"})
 
     # Display question
     print(f"\n{'='*50}")

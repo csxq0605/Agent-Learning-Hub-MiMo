@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.venv/
 
 # 敏感配置
 .env
@@ -19,6 +20,7 @@ coverage.json
 .e2e_work/
 .nexgent/outputs/
 .nexgent/sessions/
+**/.nexgent/sessions/
 .nexgent/checkpoints/
 .nexgent/memory/
 

@@ -244,6 +244,11 @@ class SkillSubstitutor:
     # Module-level flag: when True, skip interactive confirmation for shell commands.
     # Auto-detects non-interactive environments (no TTY, pytest, etc.).
     _auto_approve_shell: bool = False
+    _interaction_broker = None
+
+    @classmethod
+    def set_interaction_broker(cls, broker):
+        cls._interaction_broker = broker
 
     @classmethod
     def _should_confirm(cls) -> bool:
@@ -262,8 +267,20 @@ class SkillSubstitutor:
     @classmethod
     def _execute_shell(cls, command: str) -> str:
         """Execute a shell command and return output."""
+        if cls._interaction_broker is not None:
+            try:
+                from .runtime.interactions import InteractionKind, InteractionRequest
+                response = cls._interaction_broker.request(InteractionRequest(
+                    InteractionKind.PERMISSION,
+                    f"Skill shell command: {command}",
+                    {"permission": "execute", "command": command},
+                ))
+                if not response.accepted:
+                    return "[command declined by user]"
+            except Exception:
+                return "[command declined by user]"
         # Require user confirmation before running any shell command (interactive TTY only)
-        if cls._should_confirm():
+        elif cls._should_confirm():
             print(f"\n[Skill shell command]: {command}")
             try:
                 response = input("Execute this command? [y/N] ").strip().lower()

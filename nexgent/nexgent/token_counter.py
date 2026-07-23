@@ -10,6 +10,7 @@ Implements Claude Code/Codex patterns:
 
 import json
 import logging
+import re
 import threading
 from dataclasses import dataclass, field
 from typing import Optional
@@ -22,6 +23,26 @@ _logger = logging.getLogger("nexgent.token_counter")
 _encoder_cache: dict[str, object] = {}
 _tiktoken_available: Optional[bool] = None
 _encoder_lock = threading.Lock()
+
+
+class _OfflineEncoder:
+    """Small deterministic fallback when tiktoken's vocabulary is not cached.
+
+    Modern tiktoken wheels may download encoding data on first use. Nexgent is
+    expected to remain usable offline, so a conservative lexical tokenizer is
+    used if that download cannot complete.
+    """
+
+    _parts = re.compile(r"[\u3400-\u9fff]|[A-Za-z0-9_]+|[^\w\s]", re.UNICODE)
+
+    def encode(self, text: str):
+        tokens = []
+        for part in self._parts.findall(text or ""):
+            if re.fullmatch(r"[A-Za-z0-9_]+", part):
+                tokens.extend(part[index:index + 4] for index in range(0, len(part), 4))
+            else:
+                tokens.append(part)
+        return tokens
 
 
 def _is_tiktoken_available() -> bool:
@@ -54,7 +75,11 @@ def _get_encoder(model: str = "gpt-4"):
             # Double-check after acquiring lock
             if encoding_name not in _encoder_cache:
                 import tiktoken
-                _encoder_cache[encoding_name] = tiktoken.get_encoding(encoding_name)
+                try:
+                    _encoder_cache[encoding_name] = tiktoken.get_encoding(encoding_name)
+                except Exception as exc:
+                    _logger.warning("tiktoken vocabulary unavailable; using offline tokenizer: %s", exc)
+                    _encoder_cache[encoding_name] = _OfflineEncoder()
 
     return _encoder_cache[encoding_name]
 

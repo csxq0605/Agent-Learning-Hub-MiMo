@@ -610,6 +610,43 @@ You help users with coding, file operations, web research, document creation, an
 
         summary = parsed.get("summary", "")
         plan = parsed.get("plan", "")
+        interaction_broker = getattr(self, "interaction_broker", None)
+        if interaction_broker is not None:
+            try:
+                from .runtime.interactions import InteractionKind, InteractionRequest
+                response = interaction_broker.request(InteractionRequest(
+                    InteractionKind.USER_INPUT,
+                    f"{summary}\n\n{plan}".strip(),
+                    {
+                        "options": [
+                            {"label": "Approve", "description": "Exit plan mode and proceed"},
+                            {"label": "Reject", "description": "Stay in plan mode"},
+                            {"label": "Modify", "description": "Request plan changes"},
+                        ],
+                        "multi_select": False,
+                    },
+                ))
+                if not response.accepted:
+                    return json.dumps({"decision": "rejected", "reason": "User cancelled"})
+                if response.value == 0:
+                    return json.dumps({
+                        "decision": "approved",
+                        "message": "[PLAN APPROVED] Exiting plan mode. Proceeding with implementation.",
+                        "action": "exit_plan_mode",
+                    })
+                feedback_response = interaction_broker.request(InteractionRequest(
+                    InteractionKind.USER_INPUT,
+                    "Plan feedback",
+                    {"multiline": True, "placeholder": "Describe the requested changes"},
+                ))
+                decision = "modify" if response.value == 2 else "rejected"
+                return json.dumps({
+                    "decision": decision,
+                    "feedback": str(feedback_response.value or "") if feedback_response.accepted else "",
+                    "message": "[PLAN MODIFICATION REQUESTED]" if decision == "modify" else "[PLAN REJECTED]",
+                })
+            except Exception:
+                return json.dumps({"decision": "rejected", "reason": "Frontend interaction failed"})
         print(f"\n{'='*60}")
         print("  PLAN READY FOR REVIEW")
         print(f"{'='*60}")

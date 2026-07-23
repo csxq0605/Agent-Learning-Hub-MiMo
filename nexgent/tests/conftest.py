@@ -4,6 +4,7 @@ E2E tests (test_e2e.py) use the real API from .env — skip mock overrides.
 """
 
 import os
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import time
 import shutil
 import tempfile

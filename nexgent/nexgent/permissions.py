@@ -184,6 +184,14 @@ class PermissionGate:
         self._llm_client = None
         self._llm_model = None
         self.review_log: list[dict] = []
+        # Optional frontend-neutral broker.  The Textual callback below remains
+        # supported for compatibility; native frontends bind per gate instead
+        # of mutating a process-global callback.
+        self.interaction_broker = None
+
+    def set_interaction_broker(self, broker):
+        """Bind a frontend interaction broker to this permission gate."""
+        self.interaction_broker = broker
 
     def set_llm_client(self, client, model: str = None):
         """Set the LLM client for model-driven permission classification."""
@@ -422,6 +430,23 @@ class PermissionGate:
         """Stage 4: Interactive user confirmation."""
         print(f"\n  [CONFIRM] {action_desc}")
         print(f"  Permission: {permission.value}")
+
+        if self.interaction_broker is not None:
+            try:
+                from .runtime.interactions import InteractionKind, InteractionRequest
+                response = self.interaction_broker.request(InteractionRequest(
+                    InteractionKind.PERMISSION,
+                    action_desc,
+                    {"permission": permission.value},
+                ))
+                approved = response.accepted
+                with self._rejection_lock:
+                    self._rejection_count = 0 if approved else self._rejection_count + 1
+                self._log(permission, action_desc, "approved" if approved else "denied")
+                return approved
+            except Exception:
+                self._log(permission, action_desc, "denied_frontend_error")
+                return False
 
         # TUI mode: use callback to get input from TUI widget
         if _tui_permission_request is not None:

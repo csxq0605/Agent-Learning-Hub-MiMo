@@ -1,27 +1,4 @@
-﻿import os
-import shutil
-from pathlib import Path
-from setuptools import setup, find_packages
-from setuptools.command.install import install
-
-
-class PostInstall(install):
-    """Copy default config templates to ~/.nexgent/ on first install."""
-
-    def run(self):
-        install.run(self)
-        dest = Path.home() / ".nexgent"
-        dest.mkdir(exist_ok=True)
-        pkg_root = Path(__file__).resolve().parent
-        for src_name, dst_name in [
-            (".env.example", ".env"),
-            ("models.json.example", "models.json"),
-        ]:
-            src = pkg_root / src_name
-            dst = dest / dst_name
-            if src.exists() and not dst.exists():
-                shutil.copy2(src, dst)
-                print(f"[nexgent] Installed default config: {dst}")
+﻿from setuptools import setup, find_packages
 
 
 setup(
@@ -32,7 +9,10 @@ setup(
     long_description_content_type="text/markdown",
     author="Agent Learning Hub",
     url="https://github.com/csxq0605/Nexgent",
-    packages=find_packages(),
+    license="MIT",
+    packages=find_packages(exclude=("tests", "tests.*")),
+    include_package_data=True,
+    package_data={"nexgent": ["resources/*.png", "resources/*.svg"]},
     python_requires=">=3.10",
     install_requires=[
         "openai>=1.0.0",
@@ -43,22 +23,23 @@ setup(
         "rich>=13.0.0",
         "textual>=0.40.0",
         "pyyaml>=6.0.0",
+        "PyQt6>=6.8.0,<7.0.0",
     ],
     extras_require={
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
+            "pytest-qt>=4.5.0,<5.0.0",
         ],
     },
     entry_points={
         "console_scripts": [
             "nexgent=nexgent.cli:main",
+            "nexgent-gui=nexgent.gui.app:main",
         ],
     },
-    cmdclass={"install": PostInstall},
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
 )

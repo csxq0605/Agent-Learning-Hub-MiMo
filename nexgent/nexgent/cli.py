@@ -281,6 +281,7 @@ def _build_parser():
     parser.add_argument("--name", default=None, help="Name for the current session")
     parser.add_argument("--session-id", default=None, help="Specify a session ID to resume or create")
     parser.add_argument("--cleanup-days", type=int, default=30, help="Delete sessions older than N days (default: 30)")
+    parser.add_argument("--tui", action="store_true", help="Use the classic Textual terminal interface")
     return parser
 
 
@@ -454,8 +455,23 @@ def main():
     set_scheduler(scheduler)
     scheduler.start_background_checker(interval=30.0)
 
-    # Use full-screen TUI when stdin is a real terminal (not piped)
+    # Native desktop is the default interactive frontend.  Imports stay lazy so
+    # single-shot, piped, JSON, and stream-JSON modes never initialize Qt.
     if sys.stdin.isatty() and sys.stdout.isatty() and args.output_format == "text":
+        if not args.tui:
+            try:
+                from .runtime.service import NexgentRuntime
+                from .gui.app import launch_gui
+                runtime = NexgentRuntime(
+                    os.getcwd(),
+                    harness=harness,
+                    session=session,
+                )
+                launch_gui(os.getcwd(), runtime=runtime)
+                scheduler.stop()
+                return
+            except ImportError as exc:
+                print_warning(f"Desktop GUI unavailable ({exc}); falling back to TUI")
         try:
             from .tui import run_tui
             run_tui(
