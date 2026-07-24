@@ -320,11 +320,15 @@ class SubAgent:
         config: SubAgentConfig,
         parent_harness: Any = None,
         logger: TraceLogger = None,
+        event_callback: Optional[Callable[[dict], None]] = None,
+        session_dir: Optional[str] = None,
     ):
         self.config = config
         self.subagent_id = str(uuid.uuid4())[:8]
         self.parent_harness = parent_harness
         self.logger = logger or TraceLogger()
+        self.event_callback = event_callback
+        self.session_dir = session_dir
 
         # Communication channel
         self.channel = MessageChannel(channel_id=self.subagent_id)
@@ -337,6 +341,23 @@ class SubAgent:
         # Thread control
         self._thread: Optional[threading.Thread] = None
         self._cancel_event = threading.Event()
+        self._child_harness = None
+
+    def _emit_event(self, state: SubAgentState, **payload) -> None:
+        callback = self.event_callback
+        if callback is None:
+            return
+        event = {
+            "subagent_id": self.subagent_id,
+            "state": state.value,
+            "task": self.config.task,
+            "description": self.config.description,
+            **payload,
+        }
+        try:
+            callback(event)
+        except Exception as exc:
+            self.logger.warning(f"SubAgent event callback failed: {exc}")
 
     @property
     def state(self):
@@ -362,6 +383,7 @@ class SubAgent:
         """
         self.state = SubAgentState.RUNNING
         start_time = time.time()
+        self._emit_event(SubAgentState.RUNNING)
 
         self.logger.trace("subagent_start", {
             "subagent_id": self.subagent_id,
@@ -415,6 +437,14 @@ class SubAgent:
                 effort=self.config.effort,
                 max_tokens=self.config.max_tokens,
             )
+            self._child_harness = child_harness
+            child_harness._runtime_event_callback = (
+                lambda kind, payload: self._emit_event(
+                    self.state,
+                    event_kind=kind,
+                    **payload,
+                )
+            )
 
             # Inherit parent's hook runner so security/logging hooks apply
             if self.parent_harness and hasattr(self.parent_harness, '_hook_runner'):
@@ -437,6 +467,7 @@ class SubAgent:
                 session = Session(
                     session_id=f"sub-{self.subagent_id}",
                     working_dir=os.getcwd(),
+                    auto_save_dir=self.session_dir or "",
                 )
             else:
                 # Use parent's session if available
@@ -445,6 +476,7 @@ class SubAgent:
                     session = Session(
                         session_id=f"sub-{self.subagent_id}",
                         working_dir=os.getcwd(),
+                        auto_save_dir=self.session_dir or "",
                     )
 
             # Check for cancellation before running
@@ -458,6 +490,7 @@ class SubAgent:
                     metadata=self.config.metadata,
                 )
                 self.state = SubAgentState.CANCELLED
+                self._emit_event(SubAgentState.CANCELLED, error=self.result.error)
                 return self.result
 
             # Run the task, then restore parent's FileOpsState
@@ -512,6 +545,16 @@ class SubAgent:
             "state": self.state.value,
             "duration": self.result.duration_seconds,
         })
+        self._emit_event(
+            self.result.state,
+            result=self.result.result or "",
+            error=self.result.error or "",
+            steps_taken=self.result.steps_taken,
+            duration_seconds=round(self.result.duration_seconds, 2),
+            token_usage=self.result.token_usage,
+            session_id=f"sub-{self.subagent_id}",
+        )
+        self._child_harness = None
 
         return self.result
 
@@ -531,6 +574,9 @@ class SubAgent:
     def cancel(self):
         """Request cancellation of the SubAgent."""
         self._cancel_event.set()
+        child_harness = self._child_harness
+        if child_harness is not None:
+            child_harness.graceful_abort.request()
         # Note: state transition to CANCELLED happens in run() when it checks _cancel_event.
         # Direct state mutation here is intentionally omitted to avoid race conditions
         # with the run() method which may be executing on another thread.
@@ -630,11 +676,15 @@ class SubAgentManager:
         max_concurrent: int = MAX_CONCURRENT_SUBAGENTS,
         logger: TraceLogger = None,
         resource_limits: ResourceLimits = None,
+        event_callback: Optional[Callable[[dict], None]] = None,
+        session_dir: Optional[str] = None,
     ):
         self.parent_harness = parent_harness
         self.max_concurrent = max_concurrent
         self.logger = logger or TraceLogger()
         self.resource_limits = resource_limits or ResourceLimits(max_concurrent=max_concurrent)
+        self.event_callback = event_callback
+        self.session_dir = session_dir
 
         # SubAgent tracking
         self._subagents: dict[str, SubAgent] = {}
@@ -688,6 +738,8 @@ class SubAgentManager:
             config=config,
             parent_harness=self.parent_harness,
             logger=self.logger,
+            event_callback=self.event_callback,
+            session_dir=self.session_dir,
         )
 
         # Atomic: check limits + register under single lock (prevents TOCTOU)
@@ -701,6 +753,7 @@ class SubAgentManager:
             "subagent_id": subagent.subagent_id,
             "task": config.task,
         })
+        subagent._emit_event(SubAgentState.CREATED)
 
         return subagent
 

@@ -146,14 +146,17 @@ No project-specific folder scaffold is forced on an existing repository. Creatin
 
 ### 6.2 Main Window
 
-The selected layout is a persistent three-column workspace with a collapsible bottom control center.
+The selected layout is a compact three-column workspace. The earlier bottom
+control-center button matrix was removed after visible-use review: command
+discovery belongs in the composer, while runtime identity belongs in an Agent
+navigator.
 
 #### Left column
 
-- project file explorer;
-- file creation, folder creation, refresh, and fuzzy search;
+- a single tabbed navigator for Files, Sessions, and Agents;
+- project file explorer and preview selection;
 - recent and saved conversation sessions;
-- active file-change and checkpoint indicators.
+- live Main/SubAgent identities and lifecycle status.
 
 #### Center column
 
@@ -169,27 +172,18 @@ The selected layout is a persistent three-column workspace with a collapsible bo
 - model selector;
 - permission-mode selector: default, plan, auto, accept-edits, don't-ask, bypass, and dry-run state;
 - effort selector;
-- runtime status and token/context indicator;
-- streaming conversation timeline;
+- compact runtime status in the conversation header;
+- one streaming conversation timeline for messages and tool activity;
 - grouped and expandable tool-call cards;
 - inline permission and user-input cards;
-- slash-command and `@file` completion;
-- input queue, stop button, and send button.
+- dynamic slash-command and `@file` completion with Tab selection;
+- persistent Up/Down input history;
+- an always-available composer, `/btw` injection, input queue, stop, and send.
 
-#### Bottom control center
-
-The bottom panel is collapsed by default and contains tabs for:
-
-- tasks and background work;
-- SubAgents and parallel/pipeline activity;
-- workflows and saved runs;
-- goals and evaluation history;
-- MCP servers;
-- plugins;
-- skills;
-- custom Agents;
-- hooks;
-- logs and diagnostic events.
+There is no bottom control center. Tasks, workflows, goals, MCP, plugins,
+skills, custom Agents, hooks, and diagnostics remain accessible through the
+same slash-command service. This avoids duplicating every command as a button
+and keeps new commands discoverable without a GUI layout change.
 
 ## 7. Complete Capability Mapping
 
@@ -203,9 +197,9 @@ All current slash commands remain valid in the GUI input. Graphical surfaces are
 | Effort and models | `/effort`, `/model ...` | top toolbar selectors and model settings |
 | Memory | `/memory`, `/remember` | memory browser/editor |
 | Hooks and project setup | `/hooks`, `/init`, `/init-config` | project settings and initialization actions |
-| SubAgents | `/subagents`, `/subagent`, `/parallel`, `/pipeline` | SubAgent control-center tab |
+| SubAgents | `/subagents`, `/subagent`, `/parallel`, `/pipeline` | dynamic Agent navigator and per-Agent conversation |
 | Custom Agents | `/agents ...` | Agent manager dialog |
-| Tasks and background work | `/tasks ...`, background syntax | task control-center tab |
+| Tasks and background work | `/tasks ...`, background syntax | command result in the unified timeline |
 | Goals | `/goal ...` | goal editor, state, and evaluation timeline |
 | Skills | `/skills ...` | skills manager |
 | MCP | `/mcp install/connect/disconnect/refresh` | MCP manager |
@@ -336,7 +330,7 @@ Any version or command described in Markdown must be sourced from or checked aga
 - permission approve, deny, dismiss, and shutdown behavior;
 - model, mode, and effort selectors;
 - sessions and checkpoints;
-- all bottom control-center tabs;
+- compact Files/Sessions/Agents navigation and command-completion popup;
 - settings and extension-management dialogs;
 - clean stop and close behavior.
 
@@ -375,4 +369,3 @@ The work is complete only when all of the following are demonstrated from the cu
 8. Agent Relay brand assets are packaged and visible in application surfaces and documentation.
 9. README and brand documentation accurately describe the implemented product.
 10. Existing tests, new runtime/GUI/brand tests, lint, package build, offscreen smoke, and real-window startup checks pass.
-

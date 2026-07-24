@@ -348,6 +348,24 @@ class TestSubAgent:
 
         assert subagent._cancel_event.is_set()
 
+    def test_cancel_propagates_to_active_child_harness(self):
+        class Abort:
+            def __init__(self):
+                self.requested = False
+
+            def request(self):
+                self.requested = True
+
+        class ChildHarness:
+            def __init__(self):
+                self.graceful_abort = Abort()
+
+        subagent = SubAgent(config=SubAgentConfig(task="test"))
+        child = ChildHarness()
+        subagent._child_harness = child
+        subagent.cancel()
+        assert child.graceful_abort.requested
+
     def test_send_receive_message(self):
         config = SubAgentConfig(task="test")
         subagent = SubAgent(config=config)
@@ -410,6 +428,23 @@ class TestSubAgentManager:
 
         assert subagent.subagent_id is not None
         assert manager.get_subagent(subagent.subagent_id) is not None
+
+    def test_create_subagent_emits_structured_lifecycle_event(self, tmp_path):
+        events = []
+        manager = SubAgentManager(
+            event_callback=events.append,
+            session_dir=str(tmp_path / "sessions" / "agents"),
+        )
+        subagent = manager.create_subagent(
+            SubAgentConfig(task="inspect", description="GUI review")
+        )
+        assert events == [{
+            "subagent_id": subagent.subagent_id,
+            "state": "created",
+            "task": "inspect",
+            "description": "GUI review",
+        }]
+        assert subagent.session_dir == str(tmp_path / "sessions" / "agents")
 
     @requires_api
     def test_run_single(self):

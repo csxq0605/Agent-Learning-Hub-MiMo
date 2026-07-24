@@ -34,7 +34,7 @@ Demo 包含：
 
 ## 核心特性
 
-- **原生桌面 GUI**: PyQt6 三栏工作区（项目/会话、文件预览、Agent 对话）与可折叠控制中心，完整覆盖 Tasks、SubAgents、Workflow、Goal、MCP、Plugins、Skills、Custom Agents、Hooks、Checkpoint、Memory、Models 与权限模式
+- **原生桌面 GUI**: PyQt6 紧凑三栏工作区；Files、Sessions、Agents 共用左侧导航，文件预览居中，主 Agent 与子 Agent 对话位于统一时间线。全部能力通过可发现的斜杠命令访问，不再堆叠控制按钮
 
 - **Agent Loop**: 依赖注入、熔断器（CircuitBreaker）、Token 预算、并行工具调度、流式输出、指数退避重试、优雅中断
 - **38 个工具**（15 个模块）: 文件操作、Shell、代码执行、Web 搜索/抓取、文档创建、数学计算、笔记本编辑、任务管理、LSP 集成、调度器、计划模式、进程监控、交互提示、子代理、工作流
@@ -76,11 +76,12 @@ nexgent --tui             # 经典 Textual TUI
 
 ![Nexgent desktop workspace](assets/screenshots/main-window.png)
 
-- 左栏浏览当前项目并恢复自动保存的 JSONL 会话。
+- 左栏用 Files、Sessions、Agents 三个紧凑页签浏览项目、恢复会话，并切换查看每个运行时 Agent 的独立对话。
 - 中栏预览文本、代码、Markdown 与图片，不离开 Agent 工作区。
-- 右栏运行主 Agent、切换模型和权限模式，并处理写入/执行确认。
-- 底部控制中心提供 Run、Automate、Extensions、State 四组入口；需要参数的动作会预填到输入框，确认后才运行。
-- 输入框继续支持全部斜杠命令、`@file` 引用和 `!command`；GUI 没有另造一套能力实现。
+- 右栏用一条对话时间线展示用户消息、工具活动、主 Agent 与所选子 Agent 的结果；输入、状态和运行活动不再拆成多个面板。
+- 输入 `/` 或 `@` 会立即显示动态候选；`Tab` 补全，`↑`/`↓` 恢复项目级输入历史，`Enter` 发送，`Shift+Enter` 换行。
+- Agent 运行期间输入框仍可使用：`/btw <指导>` 立即注入当前会话，其余输入自动排队；Stop 同时通知主 Harness 和活动子 Agent。
+- 全部斜杠命令、`@file` 引用和 `!command` 仍由同一个运行时处理，GUI 没有另造能力实现。
 
 窗口关闭或权限卡片失去 frontend 时，待处理的写入确认默认拒绝。配置窗口写入项目根目录的 `models.json`，既有 `.env`、`.nexgent/` 与模型配置仍是唯一运行时来源。
 
@@ -211,7 +212,7 @@ nexgent --output-format stream-json      # 流式 JSON 输出
 
 ## GUI 与 TUI 快捷方式
 
-GUI 中使用 `Enter` 发送、`Shift+Enter` 换行、`Ctrl+J` 展开/收起控制中心、`Ctrl+W` 关闭窗口。以下快捷键适用于 `nexgent --tui`：
+GUI 中使用 `Enter` 发送、`Shift+Enter` 换行、`Tab` 补全 `/` 命令或 `@` 文件、`↑`/`↓` 浏览输入历史、`Ctrl+Shift+B` 隐藏/显示导航、`Ctrl+Shift+P` 隐藏/显示预览、`Ctrl+W` 关闭窗口。以下快捷键也适用于 `nexgent --tui`：
 
 | 快捷键 | 说明 |
 |--------|------|

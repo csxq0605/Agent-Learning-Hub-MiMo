@@ -14,6 +14,7 @@ from PyQt6.QtCore import QTimer
 from nexgent.gui.app import create_application
 from nexgent.gui.main_window import MainWindow
 from nexgent.runtime.service import NexgentRuntime
+from nexgent.runtime.events import RuntimeEvent, RuntimeEventKind
 from nexgent.context import Session
 
 
@@ -33,11 +34,29 @@ def main():
     window.agent.append_activity(
         "→ Read AGENTS.md\n→ Search authentication routes\n✓ 42 tests passed\n"
     )
+    window._runtime_event(RuntimeEvent(
+        RuntimeEventKind.SUBAGENT_CHANGED,
+        "subagent:reviewer",
+        {
+            "subagent_id": "reviewer",
+            "state": "created",
+            "description": "Review authentication boundaries",
+        },
+    ))
+    window._runtime_event(RuntimeEvent(
+        RuntimeEventKind.SUBAGENT_CHANGED,
+        "subagent:reviewer",
+        {
+            "subagent_id": "reviewer",
+            "state": "completed",
+            "result": "Authentication boundary review complete.",
+        },
+    ))
     window.preview.text.setMarkdown(
         "# Authentication review\n\n**Status:** running\n\n- Project context loaded\n- Test suite discovered\n- Security review queued"
     )
     window.preview.setCurrentWidget(window.preview.text)
-    window.control.tabs.setCurrentIndex(2)
+    window.navigation_tabs.setCurrentIndex(2)
     window.sessions.clear()
     window.sessions.addItem("demo-session")
     window.show()

@@ -1,4 +1,4 @@
-"""AutoReport-style three-column Nexgent workspace."""
+"""Compact AutoReport-style Nexgent workspace."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QListWidget, QMainWindow, QMessageBox,
-    QPushButton, QSplitter, QStatusBar, QVBoxLayout, QWidget, QInputDialog,
+    QSplitter, QStatusBar, QTabWidget, QVBoxLayout, QWidget, QInputDialog,
 )
 
 from ..context import CheckpointManager, Session
@@ -22,7 +22,6 @@ from .icons import load_app_icon
 from .runtime_bridge import RuntimeBridge
 from .theme import theme_stylesheet
 from .widgets.agent_panel import AgentPanel
-from .widgets.control_center import ControlCenter
 from .widgets.file_tree import ProjectFileTree
 from .widgets.preview import PreviewPane
 
@@ -45,6 +44,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_runtime()
         self._refresh_sessions()
+        self._agent_items = {"main": self.agent_list.item(0)}
         geometry = self.settings.value("geometry")
         if geometry:
             self.restoreGeometry(geometry)
@@ -60,10 +60,18 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
         view = self.menuBar().addMenu("View")
-        toggle = QAction("Toggle Control Center", self)
-        toggle.setShortcut("Ctrl+J")
-        toggle.triggered.connect(lambda: self.control.setVisible(not self.control.isVisible()))
-        view.addAction(toggle)
+        toggle_sidebar = QAction("Toggle Navigator", self)
+        toggle_sidebar.setShortcut("Ctrl+Shift+B")
+        toggle_sidebar.triggered.connect(
+            lambda: self.navigator.setVisible(not self.navigator.isVisible())
+        )
+        view.addAction(toggle_sidebar)
+        toggle_preview = QAction("Toggle Preview", self)
+        toggle_preview.setShortcut("Ctrl+Shift+P")
+        toggle_preview.triggered.connect(
+            lambda: self.preview_panel.setVisible(not self.preview_panel.isVisible())
+        )
+        view.addAction(toggle_preview)
         help_menu = self.menuBar().addMenu("Help")
         command_help = QAction("Nexgent Commands", self)
         command_help.triggered.connect(lambda: self.bridge.submit("/help"))
@@ -103,48 +111,62 @@ class MainWindow(QMainWindow):
         top.addWidget(workspace)
         outer.addLayout(top)
 
-        vertical = QSplitter(Qt.Orientation.Vertical)
         columns = QSplitter(Qt.Orientation.Horizontal)
 
-        left = QFrame()
-        left.setObjectName("Panel")
-        left_layout = QVBoxLayout(left)
+        self.navigator = QFrame()
+        self.navigator.setObjectName("Panel")
+        left_layout = QVBoxLayout(self.navigator)
         left_layout.setContentsMargins(6, 6, 6, 6)
-        left_layout.addWidget(self._panel_header("WORKSPACE", self.project_root.name))
+        self.navigation_tabs = QTabWidget()
+
+        files_page = QWidget()
+        files_layout = QVBoxLayout(files_page)
+        files_layout.setContentsMargins(2, 4, 2, 2)
         self.file_tree = ProjectFileTree(self.project_root)
-        left_layout.addWidget(self.file_tree, 3)
-        left_layout.addWidget(self._panel_header("SESSIONS"))
+        files_layout.addWidget(self.file_tree)
+        self.navigation_tabs.addTab(files_page, "Files")
+
+        sessions_page = QWidget()
+        sessions_layout = QVBoxLayout(sessions_page)
+        sessions_layout.setContentsMargins(2, 4, 2, 2)
         self.sessions = QListWidget()
         self.sessions.setToolTip("Double-click a session to resume it")
-        left_layout.addWidget(self.sessions, 1)
+        sessions_layout.addWidget(self.sessions)
+        self.navigation_tabs.addTab(sessions_page, "Sessions")
 
-        center = QFrame()
-        center.setObjectName("Panel")
-        center_layout = QVBoxLayout(center)
+        agents_page = QWidget()
+        agents_layout = QVBoxLayout(agents_page)
+        agents_layout.setContentsMargins(2, 4, 2, 2)
+        self.agent_list = QListWidget()
+        main_item = self._new_agent_item("main", "ready")
+        self.agent_list.addItem(main_item)
+        self.agent_list.setCurrentItem(main_item)
+        agents_layout.addWidget(self.agent_list)
+        self.navigation_tabs.addTab(agents_page, "Agents")
+        left_layout.addWidget(self.navigation_tabs)
+
+        self.preview_panel = QFrame()
+        self.preview_panel.setObjectName("Panel")
+        center_layout = QVBoxLayout(self.preview_panel)
         center_layout.setContentsMargins(6, 6, 6, 6)
-        center_layout.addWidget(self._panel_header("PREVIEW", "Markdown · code · images"))
+        center_layout.addWidget(self._panel_header("PREVIEW"))
         self.preview = PreviewPane()
         center_layout.addWidget(self.preview, 1)
 
-        self.agent = AgentPanel(self.runtime.harness.model)
+        self.agent = AgentPanel(self.runtime.harness.model, self.project_root)
         registry = get_model_registry()
         registry.load()
         for profile in registry.list_profiles():
             if profile.model_name != self.runtime.harness.model:
                 self.agent.model.addItem(profile.full_id)
 
-        columns.addWidget(left)
-        columns.addWidget(center)
+        columns.addWidget(self.navigator)
+        columns.addWidget(self.preview_panel)
         columns.addWidget(self.agent)
-        columns.setSizes([280, 540, 600])
+        columns.setSizes([245, 520, 715])
         columns.setStretchFactor(1, 2)
-        columns.setStretchFactor(2, 2)
-        vertical.addWidget(columns)
-
-        self.control = ControlCenter()
-        vertical.addWidget(self.control)
-        vertical.setSizes([650, 210])
-        outer.addWidget(vertical, 1)
+        columns.setStretchFactor(2, 3)
+        outer.addWidget(columns, 1)
         self.setCentralWidget(root)
         status = QStatusBar()
         self.status_model = QLabel(self.runtime.harness.model)
@@ -155,11 +177,37 @@ class MainWindow(QMainWindow):
 
         self.file_tree.file_selected.connect(self.preview.open_file)
         self.sessions.itemDoubleClicked.connect(self._resume_session)
+        self.agent_list.currentItemChanged.connect(self._agent_selected)
         self.agent.submitted.connect(self._submit)
         self.agent.stop_requested.connect(self.bridge.abort)
         self.agent.mode_changed.connect(self._change_mode)
         self.agent.model.currentTextChanged.connect(self._change_model)
-        self.control.command_requested.connect(self._capability_command)
+
+    @staticmethod
+    def _new_agent_item(agent_id: str, status: str):
+        from PyQt6.QtWidgets import QListWidgetItem
+
+        label = "Main" if agent_id == "main" else agent_id
+        item = QListWidgetItem(f"{label}  ·  {status.capitalize()}")
+        item.setData(Qt.ItemDataRole.UserRole, agent_id)
+        return item
+
+    def _ensure_agent_item(self, agent_id: str, status: str = "ready"):
+        item = self._agent_items.get(agent_id)
+        if item is None:
+            item = self._new_agent_item(agent_id, status)
+            self._agent_items[agent_id] = item
+            self.agent_list.addItem(item)
+        label = "Main" if agent_id == "main" else agent_id
+        item.setText(f"{label}  ·  {status.capitalize()}")
+        self.agent.ensure_agent(agent_id)
+        return item
+
+    def _agent_selected(self, current, _previous):
+        if current is None:
+            return
+        agent_id = str(current.data(Qt.ItemDataRole.UserRole) or "main")
+        self.agent.select_agent(agent_id)
 
     def _connect_runtime(self):
         self.bridge.run_started.connect(self._run_started)
@@ -168,15 +216,20 @@ class MainWindow(QMainWindow):
         self.bridge.busy_changed.connect(self.agent.set_busy)
         self.bridge.event_received.connect(self._runtime_event)
         self.bridge.interaction_requested.connect(self._resolve_interaction)
+        self.bridge.input_queued.connect(self._input_queued)
+        self.bridge.guidance_injected.connect(self._guidance_injected)
 
     def _run_started(self, text):
-        self.agent.clear_activity()
-        self.agent.add_message("You", text)
+        self._ensure_agent_item("main", "running")
+        self.agent.select_agent("main")
+        self.agent.add_message("You", text, "main")
 
     def _runtime_event(self, event):
         if event.kind == RuntimeEventKind.MESSAGE_DELTA:
             text = ANSI_RE.sub("", str(event.payload.get("text", "")))
-            self.agent.append_activity(text)
+            self.agent.append_activity(text, "main")
+        elif event.kind == RuntimeEventKind.SUBAGENT_CHANGED:
+            self._handle_subagent_event(event)
         elif event.kind in {
             RuntimeEventKind.TOOL_STARTED,
             RuntimeEventKind.TOOL_FINISHED,
@@ -185,20 +238,66 @@ class MainWindow(QMainWindow):
             RuntimeEventKind.WARNING,
         }:
             message = event.payload.get("message") or event.payload.get("tool") or event.kind.value
-            self.agent.append_activity(f"[{event.kind.value}] {message}\n")
+            message = " ".join(str(message).split())
+            if len(message) > 160:
+                message = f"{message[:157]}…"
+            agent_id = (
+                event.source.removeprefix("subagent:")
+                if event.source.startswith("subagent:")
+                else "main"
+            )
+            tool = str(event.payload.get("tool") or "").strip()
+            marker = {
+                RuntimeEventKind.TOOL_STARTED: "▸",
+                RuntimeEventKind.TOOL_FINISHED: "✓",
+                RuntimeEventKind.TOOL_FAILED: "✕",
+            }.get(event.kind, "•")
+            detail = f"{marker} {tool}" if tool else f"{marker} {message}"
+            if tool and event.kind != RuntimeEventKind.TOOL_STARTED and message != tool:
+                detail += f" — {message}"
+            self.agent.append_activity(detail, agent_id)
+
+    def _handle_subagent_event(self, event):
+        payload = dict(event.payload)
+        agent_id = str(payload.get("subagent_id") or event.source.removeprefix("subagent:"))
+        state = str(payload.get("state") or "running")
+        self._ensure_agent_item(agent_id, state)
+        self.agent.set_agent_status(agent_id, state)
+        task = str(payload.get("description") or payload.get("task") or "").strip()
+        if state == "created" and task:
+            self.agent.add_message("System", f"Assigned task\n{task}", agent_id)
+        elif state == "running":
+            self.agent.append_activity("Working…", agent_id)
+        elif state == "completed":
+            result = str(payload.get("result") or "").strip()
+            if result:
+                self.agent.add_message("Nexgent", result, agent_id)
+        elif state in {"failed", "cancelled"}:
+            error = str(payload.get("error") or state).strip()
+            self.agent.add_message("Error", error, agent_id)
 
     def _submit(self, text):
         if self.bridge.submit(text):
             self.statusBar().showMessage("Running…")
 
+    def _input_queued(self, text, position):
+        self.agent.add_message("System", f"Queued #{position}: {text}", "main")
+        self.statusBar().showMessage(f"Queued #{position}", 2500)
+
+    def _guidance_injected(self, text):
+        self.agent.add_message("System", f"Guidance injected: {text}", "main")
+        self.statusBar().showMessage("Guidance injected", 2500)
+
     def _run_finished(self, result):
         if result:
-            self.agent.add_message("Nexgent", ANSI_RE.sub("", result))
+            self.agent.add_message("Nexgent", ANSI_RE.sub("", result), "main")
+        self._ensure_agent_item("main", "ready")
         self.statusBar().showMessage("Ready", 2500)
         self._refresh_sessions()
 
     def _run_failed(self, error):
-        self.agent.add_message("Error", error)
+        self.agent.add_message("Error", error, "main")
+        self._ensure_agent_item("main", "failed")
         self.statusBar().showMessage("Run failed", 5000)
         self._refresh_sessions()
 
@@ -253,16 +352,6 @@ class MainWindow(QMainWindow):
             self._submit(f"/model set {model}")
         self.status_model.setText(model)
 
-    def _capability_command(self, command, immediate):
-        if immediate:
-            self._submit(command)
-        else:
-            self.agent.composer.setPlainText(command)
-            self.agent.composer.setFocus()
-            cursor = self.agent.composer.textCursor()
-            cursor.movePosition(cursor.MoveOperation.End)
-            self.agent.composer.setTextCursor(cursor)
-
     def _refresh_sessions(self):
         self.sessions.clear()
         files = sorted(self.runtime.session_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -283,7 +372,9 @@ class MainWindow(QMainWindow):
         self.runtime.commands.checkpoint_manager = self.runtime.checkpoint_manager
         self.runtime.harness._checkpoint_manager = self.runtime.checkpoint_manager
         self.status_session.setText(f"Session {loaded.session_id}")
-        self.agent.add_message("System", f"Resumed {loaded.session_id} ({len(loaded.messages)} messages)")
+        self.agent.add_message(
+            "System", f"Resumed {loaded.session_id} ({len(loaded.messages)} messages)", "main"
+        )
 
     def _open_config(self):
         ConfigDialog(self.project_root, self).exec()

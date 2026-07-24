@@ -6,19 +6,19 @@
 
 | GUI 区域 | 使用的 Nexgent 能力 |
 | --- | --- |
-| Workspace | 项目文件浏览、`@file` 引用来源、文本/代码/Markdown/图片预览 |
+| Files | 项目文件浏览、`@file` 候选来源、文本/代码/Markdown/图片预览 |
 | Sessions | JSONL 自动保存、恢复、分叉、保存与加载 |
-| Agent | 主 Agent 运行、流式输出、模型切换、六种权限模式、停止、写入确认 |
-| Run | Background Tasks、单个/并行/Pipeline SubAgents |
-| Automate | Workflow 运行/恢复/保存、Goal 设置/状态/清理 |
-| Extensions | MCP、Plugins、Skills、Custom Agents、Hooks |
-| State | Checkpoint rewind、Memory、Context、Compact、Stats、Tools、Project init |
+| Agents | 主 Agent 与每个 SubAgent 的生命周期、任务和独立对话结果 |
+| Conversation | 主 Agent 运行、模型/权限切换、工具活动、停止、写入确认 |
+| Composer | `/` 命令与 `@` 文件动态候选、Tab 补全、项目级输入历史、运行中指导与排队 |
 
-所有控制中心动作都发送到 `CommandService`，后者调用原有 `_handle_command`。普通消息、`@` 引用和 `!` Shell 由 `NexgentRuntime` 路由到同一个 `NexgentAgent` 与 `PermissionGate`。因此增加 GUI 不会产生第二套 Agent loop、权限规则或扩展状态。
+GUI 不再为每个命令维护按钮矩阵。`nexgent.commands.SLASH_COMMANDS` 是 `/` 候选的唯一来源，`scan_completions()` 同时服务 GUI 与终端的 `@` 文件候选。命令继续由 `CommandService` 调用原有 `_handle_command`；普通消息、`@` 引用和 `!` Shell 继续由 `NexgentRuntime` 路由到同一个 `NexgentAgent` 与 `PermissionGate`。
+
+运行期间 Composer 保持可输入。`/btw` 通过线程安全 Session 注入当前上下文，普通输入进入有界 FIFO 队列。SubAgent 创建、运行、完成、失败和取消都会发出 `SUBAGENT_CHANGED`，GUI据此创建可切换的 Agent 记录；隔离子会话保存在 `.nexgent/sessions/agents/`。
 
 ## 安全与线程
 
-耗时运行发生在 Qt 主线程之外。`RuntimeBridge` 只通过 Qt signal 把事件送回窗口。写入和执行确认通过 `InteractionBroker` 传给主线程的模态确认框；没有 handler、超时、窗口关闭或 handler 异常都返回拒绝。
+耗时运行发生在 Qt 主线程之外。`RuntimeBridge` 只通过 Qt signal 把事件送回窗口。写入和执行确认通过 `InteractionBroker` 传给主线程的模态确认框；没有 handler、超时、窗口关闭或 handler 异常都返回拒绝。Stop 会同时请求主 Harness 中止并调用 `SubAgentManager.cancel_all()`；活动子 Harness 会收到自己的 graceful-abort 请求。
 
 ## 开发与验证
 

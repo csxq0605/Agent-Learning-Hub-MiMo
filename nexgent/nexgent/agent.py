@@ -333,6 +333,16 @@ You help users with coding, file operations, web research, document creation, an
         self._workflow_runner = None
         self._register_tools()
 
+    def _emit_runtime_event(self, kind: str, **payload) -> None:
+        """Emit optional frontend-neutral activity without coupling the harness to Qt."""
+        callback = getattr(self, "_runtime_event_callback", None)
+        if callback is None:
+            return
+        try:
+            callback(kind, payload)
+        except Exception as exc:
+            self.logger.warning(f"Runtime event callback failed: {exc}")
+
     def _register_tools(self):
         all_tools = (
             file_ops.get_tools()
@@ -1241,6 +1251,11 @@ You help users with coding, file operations, web research, document creation, an
                 print()
                 status_bar = get_status_bar()
                 for i, (func_name, func_args) in enumerate(all_calls_parsed):
+                    self._emit_runtime_event(
+                        "tool_started",
+                        tool=func_name,
+                        arguments=func_args,
+                    )
                     print_tool_call_collapsible(
                         func_name, func_args, i, total_tool_calls, collapsed=True
                     )
@@ -1259,10 +1274,22 @@ You help users with coding, file operations, web research, document creation, an
                                 duration = time.time() - tool_start
                                 success, error_msg, preview = _parse_tool_result(result)
                                 print_tool_call_result(func_name, success, duration, preview, error_msg)
+                                self._emit_runtime_event(
+                                    "tool_finished" if success else "tool_failed",
+                                    tool=func_name,
+                                    duration_seconds=round(duration, 3),
+                                    message=preview or error_msg or "",
+                                )
                             except Exception as e:
                                 duration = time.time() - tool_start
                                 result = json.dumps({"error": str(e)})
                                 print_tool_call_result(func_name, False, duration, error=str(e))
+                                self._emit_runtime_event(
+                                    "tool_failed",
+                                    tool=func_name,
+                                    duration_seconds=round(duration, 3),
+                                    message=str(e),
+                                )
                             session.add_message("tool", result, tool_call_id=tc.id)
                 # Update status bar after parallel execution
                 status_bar.set_thinking(self.model)
@@ -1278,10 +1305,22 @@ You help users with coding, file operations, web research, document creation, an
                         duration = time.time() - tool_start
                         success, error_msg, preview = _parse_tool_result(result)
                         print_tool_call_result(func_name, success, duration, preview, error_msg)
+                        self._emit_runtime_event(
+                            "tool_finished" if success else "tool_failed",
+                            tool=func_name,
+                            duration_seconds=round(duration, 3),
+                            message=preview or error_msg or "",
+                        )
                     except Exception as e:
                         duration = time.time() - tool_start
                         result = json.dumps({"error": str(e)})
                         print_tool_call_result(func_name, False, duration, error=str(e))
+                        self._emit_runtime_event(
+                            "tool_failed",
+                            tool=func_name,
+                            duration_seconds=round(duration, 3),
+                            message=str(e),
+                        )
                     session.add_message("tool", result, tool_call_id=tc.id)
 
                 # Update status bar after sequential execution
@@ -1306,6 +1345,8 @@ You help users with coding, file operations, web research, document creation, an
             self._subagent_manager = SubAgentManager(
                 parent_harness=self,
                 logger=self.logger,
+                event_callback=getattr(self, "_subagent_event_callback", None),
+                session_dir=getattr(self, "_subagent_session_dir", None),
             )
         return self._subagent_manager
 

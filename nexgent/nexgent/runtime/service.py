@@ -58,6 +58,13 @@ class NexgentRuntime:
         self.event_sink = event_sink
         self.interaction_broker = interaction_broker or InteractionBroker()
         self.harness = harness or NexgentAgent(**(agent_options or {}))
+        self.harness._runtime_event_callback = self._on_harness_event
+        self.harness._subagent_event_callback = self._on_subagent_event
+        self.harness._subagent_session_dir = str(self.session_dir / "agents")
+        existing_subagent_manager = getattr(self.harness, "_subagent_manager", None)
+        if existing_subagent_manager is not None:
+            existing_subagent_manager.event_callback = self._on_subagent_event
+            existing_subagent_manager.session_dir = self.harness._subagent_session_dir
         self.session = session or Session(
             secrets.token_hex(4),
             auto_save_dir=str(self.session_dir),
@@ -83,6 +90,45 @@ class NexgentRuntime:
 
     def _emit(self, kind: RuntimeEventKind, **payload: Any) -> None:
         emit_event(self.event_sink, kind, source="runtime", payload=payload)
+
+    def _on_subagent_event(self, payload: dict[str, Any]) -> None:
+        subagent_id = str(payload.get("subagent_id") or "unknown")
+        event_kind = payload.get("event_kind")
+        if event_kind:
+            event_payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"event_kind", "subagent_id", "state", "task", "description"}
+            }
+            emit_event(
+                self.event_sink,
+                RuntimeEventKind(str(event_kind)),
+                source=f"subagent:{subagent_id}",
+                payload=event_payload,
+            )
+            return
+        emit_event(
+            self.event_sink,
+            RuntimeEventKind.SUBAGENT_CHANGED,
+            source=f"subagent:{subagent_id}",
+            payload=payload,
+        )
+
+    def _on_harness_event(self, kind: str, payload: dict[str, Any]) -> None:
+        emit_event(
+            self.event_sink,
+            RuntimeEventKind(kind),
+            source="main",
+            payload=payload,
+        )
+
+    def inject_guidance(self, text: str) -> None:
+        """Inject user guidance into the active session without starting a new run."""
+        value = text.strip()
+        if not value:
+            return
+        self.session.add_message("user", value, injected=True)
+        self._emit(RuntimeEventKind.NOTICE, message=f"Guidance injected: {value}")
 
     def handle_input(self, text: str) -> str:
         value = text.strip()
@@ -205,6 +251,9 @@ class NexgentRuntime:
 
     def abort(self) -> None:
         self.harness.graceful_abort.request()
+        manager = getattr(self.harness, "_subagent_manager", None)
+        if manager is not None:
+            manager.cancel_all()
         self._emit(RuntimeEventKind.RUN_ABORTED)
 
     def close(self) -> None:
