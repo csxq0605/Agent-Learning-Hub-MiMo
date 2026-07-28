@@ -446,6 +446,10 @@ class WorkflowRunner:
             parent_harness=self.parent_harness,
             max_concurrent=1,
             logger=self.logger,
+            event_callback=getattr(
+                self.parent_harness, "_subagent_event_callback", None
+            ),
+            session_dir=getattr(self.parent_harness, "_subagent_session_dir", None),
         )
 
         result = manager.run_single(config)

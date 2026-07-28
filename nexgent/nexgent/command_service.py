@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import shlex
+import sys
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -14,6 +15,22 @@ class CommandResult:
     action: str
     output: str
     session: Any
+
+
+class _Tee(io.TextIOBase):
+    """Mirror command output to the frontend stream while retaining a result."""
+
+    def __init__(self, *streams: io.TextIOBase) -> None:
+        self.streams = streams
+
+    def write(self, text: str) -> int:
+        for stream in self.streams:
+            stream.write(text)
+        return len(text)
+
+    def flush(self) -> None:
+        for stream in self.streams:
+            stream.flush()
 
 
 class CommandService:
@@ -39,7 +56,9 @@ class CommandService:
             return CommandResult("continue", "", self.session)
         parts[0] = parts[0].lower()
         stream = io.StringIO()
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+        stdout = _Tee(sys.stdout, stream)
+        stderr = _Tee(sys.stderr, stream)
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             action, session = _handle_command(
                 parts,
                 self.harness,

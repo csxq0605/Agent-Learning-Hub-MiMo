@@ -41,6 +41,17 @@ def test_runtime_runs_prompt_and_emits_lifecycle(tmp_path):
     assert events[-1].kind is RuntimeEventKind.RUN_FINISHED
 
 
+def test_runtime_preserves_quit_command_action(tmp_path):
+    runtime = NexgentRuntime(
+        project_root=tmp_path,
+        harness=FakeHarness(),
+        session=Session("test", auto_save_dir=str(tmp_path)),
+    )
+    result = runtime.handle_input("/quit")
+    assert runtime.last_command_action == "quit"
+    assert "Bye!" in result
+
+
 def test_runtime_abort_delegates_to_harness(tmp_path):
     harness = FakeHarness()
     runtime = NexgentRuntime(tmp_path, harness=harness, session=Session("test"))

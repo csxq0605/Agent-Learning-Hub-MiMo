@@ -51,13 +51,21 @@ class NexgentRuntime:
         from ..command_service import CommandService
         from ..context import CheckpointManager, Session
         from ..memory import MemoryStore
+        from ..models import get_model_registry
 
         self.project_root = Path(project_root).expanduser().resolve()
         self.session_dir = self.project_root / ".nexgent" / "sessions"
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.event_sink = event_sink
         self.interaction_broker = interaction_broker or InteractionBroker()
-        self.harness = harness or NexgentAgent(**(agent_options or {}))
+        registry = get_model_registry()
+        project_models = self.project_root / "models.json"
+        registry.reload(str(project_models) if project_models.exists() else None)
+        options = dict(agent_options or {})
+        if harness is None and "model" not in options:
+            options["model"] = registry.get_default("main").model_name
+        self.harness = harness or NexgentAgent(**options)
+        self.last_command_action = "continue"
         self.harness._runtime_event_callback = self._on_harness_event
         self.harness._subagent_event_callback = self._on_subagent_event
         self.harness._subagent_session_dir = str(self.session_dir / "agents")
@@ -134,6 +142,7 @@ class NexgentRuntime:
         value = text.strip()
         if not value:
             return ""
+        self.last_command_action = "continue"
         self._emit(RuntimeEventKind.RUN_STARTED, text=value)
         writer = _EventWriter(self.event_sink)
         from ..tools.interactive import set_interaction_broker
@@ -225,6 +234,7 @@ class NexgentRuntime:
             return f"Agent '{name}' created at {path}"
 
         command_result = self.commands.execute(value)
+        self.last_command_action = command_result.action
         self.session = command_result.session
         self.commands.session = self.session
         return command_result.output

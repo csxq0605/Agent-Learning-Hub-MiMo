@@ -185,6 +185,16 @@ class Composer(QPlainTextEdit):
     def keyPressEvent(self, event):
         key = event.key()
         popup_visible = self.completer.popup().isVisible()
+        if (
+            popup_visible
+            and self._history_index is not None
+            and key in (Qt.Key.Key_Up, Qt.Key.Key_Down)
+            and not event.modifiers()
+            and self.document().blockCount() == 1
+        ):
+            self.completer.popup().hide()
+            if self._navigate_history(-1 if key == Qt.Key.Key_Up else 1):
+                return
         if popup_visible and key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
             self._move_popup_selection(-1 if key == Qt.Key.Key_Up else 1)
             return
@@ -353,6 +363,19 @@ class AgentPanel(QFrame):
         self._agent_statuses[agent_id] = status
         if agent_id == self.current_agent_id:
             self.status.setText(status.capitalize())
+
+    def clear_conversation(self, agent_id: str = "main") -> None:
+        self.ensure_agent(agent_id)
+        self._transcripts[agent_id].clear()
+        if agent_id == self.current_agent_id:
+            self.messages.clear()
+
+    def restore_submission(self, text: str) -> None:
+        self.composer.setPlainText(text)
+        cursor = self.composer.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.composer.setTextCursor(cursor)
+        self.composer.setFocus()
 
     def set_busy(self, busy: bool):
         self.set_agent_status("main", "running" if busy else "ready")

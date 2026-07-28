@@ -438,6 +438,10 @@ class SubAgent:
                 max_tokens=self.config.max_tokens,
             )
             self._child_harness = child_harness
+            interaction_broker = getattr(self.parent_harness, "interaction_broker", None)
+            if interaction_broker is not None:
+                child_harness.interaction_broker = interaction_broker
+                child_harness.perms.set_interaction_broker(interaction_broker)
             child_harness._runtime_event_callback = (
                 lambda kind, payload: self._emit_event(
                     self.state,

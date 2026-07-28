@@ -7,7 +7,7 @@ class Harness:
     pass
 
 
-def test_command_service_wraps_existing_dispatcher(monkeypatch, tmp_path):
+def test_command_service_wraps_existing_dispatcher(monkeypatch, tmp_path, capsys):
     seen = {}
 
     def dispatch(parts, harness, session, memory_store, checkpoint_manager, session_dir):
@@ -22,3 +22,4 @@ def test_command_service_wraps_existing_dispatcher(monkeypatch, tmp_path):
     assert seen["parts"] == ["/tasks", "list"]
     assert result.output.strip() == "command output"
     assert result.session is session
+    assert "command output" in capsys.readouterr().out

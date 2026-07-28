@@ -146,6 +146,13 @@ class ModelRegistry:
         else:
             self._load_from_env()
 
+    def reload(self, config_path: str = None):
+        """Discard cached profiles and reload configuration from disk."""
+        self._profiles.clear()
+        self._defaults.clear()
+        self._loaded = False
+        self.load(config_path)
+
     def _load_from_dict(self, data: dict):
         """Load from parsed JSON config."""
         providers = data.get("providers", {})

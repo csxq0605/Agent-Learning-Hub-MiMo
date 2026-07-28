@@ -82,6 +82,24 @@ def test_failed_run_updates_status_and_conversation(qtbot, fake_runtime):
     assert "provider unavailable" in window.agent.messages.toPlainText()
 
 
+def test_clear_command_clears_visible_conversation(qtbot, fake_runtime):
+    window = MainWindow(fake_runtime)
+    qtbot.addWidget(window)
+    window.agent.add_message("You", "old transcript")
+    window._input_finished("/clear", "")
+    text = window.agent.messages.toPlainText()
+    assert "old transcript" not in text
+    assert "Session cleared." in text
+
+
+def test_rejected_submission_is_restored_to_composer(qtbot, fake_runtime, monkeypatch):
+    window = MainWindow(fake_runtime)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window.bridge, "submit", lambda _text: False)
+    window._submit("keep this input")
+    assert window.agent.composer.toPlainText() == "keep this input"
+
+
 def test_subagent_event_creates_switchable_agent_conversation(qtbot, fake_runtime):
     window = MainWindow(fake_runtime)
     qtbot.addWidget(window)
@@ -172,3 +190,22 @@ def test_composer_up_down_restores_persisted_history_and_draft(qtbot, tmp_path):
     qtbot.addWidget(reopened)
     qtbot.keyClick(reopened, Qt.Key.Key_Up)
     assert reopened.toPlainText() == "second"
+
+
+def test_composer_down_restores_draft_when_recalled_command_opens_popup(
+    qtbot, tmp_path
+):
+    composer = Composer(tmp_path)
+    qtbot.addWidget(composer)
+    composer.show()
+    composer.setFocus()
+    composer.setPlainText("/effort")
+    assert composer.submit_current()
+    composer.setPlainText("draft-visible")
+
+    qtbot.keyClick(composer, Qt.Key.Key_Up)
+    assert composer.toPlainText() == "/effort"
+    composer.completer.popup().show()
+    assert composer.completer.popup().isVisible()
+    qtbot.keyClick(composer, Qt.Key.Key_Down)
+    assert composer.toPlainText() == "draft-visible"

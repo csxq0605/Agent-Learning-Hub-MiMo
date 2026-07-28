@@ -218,8 +218,13 @@ class MainWindow(QMainWindow):
         self.bridge.interaction_requested.connect(self._resolve_interaction)
         self.bridge.input_queued.connect(self._input_queued)
         self.bridge.guidance_injected.connect(self._guidance_injected)
+        self.bridge.input_rejected.connect(self._input_rejected)
+        self.bridge.queue_cleared.connect(self._queue_cleared)
+        self.bridge.input_finished.connect(self._input_finished)
+        self.bridge.exit_requested.connect(self.close)
 
     def _run_started(self, text):
+        self._active_input = text
         self._ensure_agent_item("main", "running")
         self.agent.select_agent("main")
         self.agent.add_message("You", text, "main")
@@ -279,6 +284,8 @@ class MainWindow(QMainWindow):
     def _submit(self, text):
         if self.bridge.submit(text):
             self.statusBar().showMessage("Running…")
+        else:
+            self.agent.restore_submission(text)
 
     def _input_queued(self, text, position):
         self.agent.add_message("System", f"Queued #{position}: {text}", "main")
@@ -288,8 +295,31 @@ class MainWindow(QMainWindow):
         self.agent.add_message("System", f"Guidance injected: {text}", "main")
         self.statusBar().showMessage("Guidance injected", 2500)
 
+    def _input_rejected(self, _text, reason):
+        self.agent.add_message("System", reason, "main")
+        self.statusBar().showMessage(reason, 4000)
+
+    def _queue_cleared(self, count):
+        self.agent.add_message(
+            "System", f"Stopped current run and cleared {count} queued input(s).", "main"
+        )
+        self.statusBar().showMessage(f"Cleared {count} queued input(s)", 4000)
+
+    def _input_finished(self, text, _result):
+        parts = text.strip().split(maxsplit=1)
+        command = parts[0].lower() if parts else ""
+        if command == "/clear":
+            self.agent.clear_conversation("main")
+            self.agent.add_message("System", "Session cleared.", "main")
+        if command in {"/load", "/fork"}:
+            self.status_session.setText(f"Session {self.runtime.session.session_id}")
+            self._refresh_sessions()
+        if command == "/model":
+            self.status_model.setText(self.runtime.harness.model)
+
     def _run_finished(self, result):
-        if result:
+        active_input = getattr(self, "_active_input", "")
+        if result and not active_input.lstrip().startswith("/"):
             self.agent.add_message("Nexgent", ANSI_RE.sub("", result), "main")
         self._ensure_agent_item("main", "ready")
         self.statusBar().showMessage("Ready", 2500)
@@ -307,8 +337,24 @@ class MainWindow(QMainWindow):
                 options = request.metadata["options"]
                 labels = [item.get("label", f"Option {index + 1}") for index, item in enumerate(options)]
                 if request.metadata.get("multi_select"):
+                    options_text = "\n".join(
+                        (
+                            f"{index + 1}. {label}"
+                            + (
+                                f" — {options[index].get('description', '')}"
+                                if options[index].get("description")
+                                else ""
+                            )
+                        )
+                        for index, label in enumerate(labels)
+                    )
                     text, accepted = QInputDialog.getText(
-                        self, "Nexgent question", request.prompt + "\nEnter comma-separated option numbers:"
+                        self,
+                        "Nexgent question",
+                        (
+                            f"{request.prompt}\n\n{options_text}\n\n"
+                            "Enter comma-separated option numbers:"
+                        ),
                     )
                     if accepted:
                         try:
@@ -328,7 +374,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Nexgent input",
                 request.prompt,
-                request.metadata.get("placeholder", ""),
+                "",
             )
             request.resolve(accepted, text)
             return
@@ -377,10 +423,28 @@ class MainWindow(QMainWindow):
         )
 
     def _open_config(self):
-        ConfigDialog(self.project_root, self).exec()
+        dialog = ConfigDialog(self.project_root, self)
+        dialog.configuration_saved.connect(self._configuration_saved)
+        dialog.exec()
+
+    def _configuration_saved(self):
+        registry = get_model_registry()
+        registry.reload(str(self.project_root / "models.json"))
+        profile = registry.get_profile(self.runtime.harness.model)
+        if profile is None:
+            profile = registry.get_default("main")
+            self.runtime.harness.model = profile.model_name
+        self.agent.model.blockSignals(True)
+        self.agent.model.clear()
+        for item in registry.list_profiles():
+            self.agent.model.addItem(item.full_id)
+        self.agent.model.setCurrentText(profile.full_id)
+        self.agent.model.blockSignals(False)
+        self.status_model.setText(profile.full_id)
+        self.statusBar().showMessage("Configuration applied", 3000)
 
     def closeEvent(self, event):
         self.settings.setValue("geometry", self.saveGeometry())
         self.runtime.interaction_broker.set_handler(None)
-        self.bridge.close()
+        self.bridge.close(timeout=5.0)
         event.accept()
