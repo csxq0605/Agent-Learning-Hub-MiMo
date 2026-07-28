@@ -76,6 +76,8 @@ nexgent --tui             # 经典 Textual TUI
 
 ![Nexgent desktop workspace](assets/screenshots/main-window.png)
 
+[查看 2026-07-28 真实可见 GUI 与远程主/子 Agent 验收记录](docs/visible-gui-validation.md)。
+
 - 左栏用 Files、Sessions、Agents 三个紧凑页签浏览项目、恢复会话，并切换查看每个运行时 Agent 的独立对话。
 - 中栏预览文本、代码、Markdown 与图片，不离开 Agent 工作区。
 - 右栏用一条对话时间线展示用户消息、工具活动、主 Agent 与所选子 Agent 的结果；输入、状态和运行活动不再拆成多个面板。
