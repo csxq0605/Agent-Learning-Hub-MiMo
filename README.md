@@ -1,6 +1,6 @@
-# Nexgent
+![Nexgent — Agents in motion](nexgent/assets/brand/nexgent-title.png)
 
-基于 [Agent Learning Hub](https://github.com/datawhalechina/Agent-Learning-Hub) 学习路线，完成 Stage 0-8 实践。此外，按学习经验构建生产级 Agent Harness。
+基于 [Agent Learning Hub](https://github.com/datawhalechina/Agent-Learning-Hub) 学习路线完成 Stage 0-8 实践，并在此基础上构建生产级、模型无关的 Agent Harness。Nexgent 现在同时提供原生 PyQt6 桌面 GUI、Textual TUI 与无界面 CLI，三种前端共用同一个 Agent、工具、权限、Session、SubAgent、Workflow 与扩展运行时。
 
 ## 阶段概览
 
@@ -18,11 +18,23 @@
 
 ## Nexgent
 
-基于 Stage 0-8 经验构建的生产级模型无关 Agent Harness，参考 Claude Code 架构。
+基于 Stage 0-8 经验构建的生产级模型无关 Agent Harness，参考 Claude Code 架构，并采用 AutoReport/Manyselves 已验证的紧凑工作区交互方式。
 
-**核心特性**：Agent Loop、38 个工具、MCP 工具桥接、权限管线、安全管线、上下文管理、记忆系统、会话管理、Hook 系统、SubAgent、工作流引擎、多模型配置、插件系统、Tavily 搜索、MCP 集成、Skills、TUI、CLI、自定义智能体、后台任务、@文件引用、目标管理
+**核心特性**：原生桌面 GUI、Agent Loop、38 个工具、MCP 工具桥接、6 种权限模式、安全管线、上下文管理、记忆系统、Session、Hook、SubAgent、Workflow、多模型配置、插件、Skills、TUI、CLI、自定义 Agent、后台任务、`@file` 引用与 Goal 管理。
 
-详见 [nexgent/README.md](nexgent/README.md)。
+详见 [Nexgent 产品文档](nexgent/README.md)、[桌面 GUI 说明](nexgent/docs/desktop-gui.md)和[真实可见验收记录](nexgent/docs/visible-gui-validation.md)。
+
+## 原生桌面 GUI
+
+![Nexgent desktop workspace](nexgent/assets/screenshots/main-window.png)
+
+- Files、Sessions、Agents 共用紧凑左侧导航；中栏预览 Markdown、文本、代码和图片；右栏展示统一 Agent 对话与工具活动。
+- `/` 命令与 `@` 文件支持动态候选和 Tab 补全；项目级输入历史支持 `↑`/`↓` 恢复草稿。
+- 运行中可用 `/btw <指导>` 注入上下文，普通输入进入有界队列，Stop 同时停止主/子 Agent 并清除未执行输入。
+- 写入、Plan 和动态问答使用 GUI 原生审批框；SubAgent 与 Workflow Agent 拥有独立可切换对话。
+- 配置保存后立即重载模型；`/clear`、`/quit`、Session save/load/fork 和安全关闭均通过同一运行时完成。
+
+真实 macOS 窗口验收覆盖 25 个功能场景并全部通过；远程模型完成了主 Agent 读取、可见审批、子 Agent `created → running → completed` 和结果回传。详见[完整验收证据](nexgent/docs/visible-gui-validation.md)。
 
 ## 快速开始
 
@@ -38,8 +50,12 @@ cp .env.example .env
 # 配置模型（可选，有默认值）
 cp models.json.example models.json
 
-nexgent          # 进入交互模式
+nexgent          # 原生桌面 GUI
+nexgent --tui    # Textual TUI
+nexgent --task "Review this project"  # 无界面 CLI
 ```
+
+交互式运行 `nexgent` 默认启动原生桌面 GUI。管道输入、`--task`、`json` 与 `stream-json` 保持无 Qt 的自动化路径。
 
 ## 测试
 
@@ -48,6 +64,8 @@ nexgent          # 进入交互模式
 | 单元测试 | 1057+ |
 | E2E 测试 | 73（57 fast + 16 slow） |
 | Stage 测试 | 67 |
+
+2026-07-28 桌面交付复验：可见 GUI 25/25；代码套件 1017 passed、110 skipped；7 个因沙箱网络权限失败的 localhost/外网测试在授权环境重跑为 7/7 passed。
 
 ```bash
 cd nexgent
@@ -75,13 +93,18 @@ Nexgent/
 │   ├── nexgent/           # Python 包
 │   │   ├── agent.py       # 核心 Agent Loop
 │   │   ├── cli.py         # REPL + 斜杠命令
+│   │   ├── gui/           # PyQt6 原生桌面工作区
+│   │   ├── runtime/       # GUI/TUI/CLI 共用运行时与事件
 │   │   ├── workflow.py    # 工作流引擎
 │   │   ├── models.py      # 多模型配置
 │   │   ├── plugins.py     # 插件系统
 │   │   ├── mcp.py         # MCP 集成（工具桥接）
 │   │   ├── tui.py         # 全屏 TUI 界面
 │   │   ├── tools/         # 14 个工具模块（38 个工具）
+│   │   ├── resources/     # 打包应用图标
 │   │   └── ...
+│   ├── assets/            # Agent Relay 品牌与 GUI 截图
+│   ├── docs/              # GUI、品牌与验收文档
 │   ├── tests/             # 单元 + E2E 测试
 │   ├── models.json.example  # 模型配置模板
 │   └── setup.py
