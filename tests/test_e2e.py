@@ -1,4 +1,4 @@
-"""End-to-end tests for Stage 1-8 with real MiMo API calls.
+"""End-to-end tests for the retained learning-stage examples with real API calls.
 
 Only tests that actually invoke the LLM API belong here.
 Local logic tests (safe_eval, extract_json, etc.) are in test_stage_unit.py.
@@ -223,29 +223,6 @@ class TestStage6E2E:
         finally:
             loop.run_until_complete(agent.stop())
             loop.close()
-
-
-# ============================================================
-# STAGE 7: Eval Runner — API tests
-# ============================================================
-
-class TestStage7E2E:
-    @pytest.fixture(autouse=True)
-    def _load(self):
-        self.s7 = load_module("stage7", REPO_ROOT / "stage-7" / "eval_runner.py")
-
-    def test_run_eval_cases(self):
-        EVAL_CASES = self.s7.EVAL_CASES
-        EvalRunner = self.s7.EvalRunner
-
-        runner = EvalRunner()
-        cases = EVAL_CASES[:3]
-        report = runner.run_all(cases)
-        assert report["summary"]["total"] == 3
-        assert "pass_rate" in report["summary"]
-        print(f"    [INFO] Pass rate: {report['summary']['pass_rate']}")
-        for r in report["results"]:
-            print(f"    [INFO] Case #{r['id']}: {r['status']} - '{r['actual'][:50]}'")
 
 
 # ============================================================

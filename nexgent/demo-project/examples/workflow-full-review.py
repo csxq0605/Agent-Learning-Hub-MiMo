@@ -1,69 +1,84 @@
-"""Full review and fix workflow for the demo-project.
+"""Review, repair, and verify the planted-fault demo project.
 
-Usage:
+Usage from ``nexgent/demo-project``::
+
     nexgent> /workflow run examples/workflow-full-review.py
 
-Demonstrates: multi-phase orchestration, pipeline pattern,
-parallel agents, budget control.
+This is a generic Harness demonstration. It does not claim dependency-aware
+root-cause localization or scientific verification; those are tracked in the
+research roadmap.
 """
 
-export const meta = {
-    name: 'full-review',
-    description: 'Full code review, bug fix, and verification workflow',
-    phases: [
-        { title: 'Scan', detail: 'Find all issues across the codebase' },
-        { title: 'Fix', detail: 'Fix the most critical bugs' },
-        { title: 'Verify', detail: 'Run tests and confirm fixes' },
-    ],
+
+META = {
+    "name": "full-review",
+    "description": "Review planted faults, apply a bounded repair, and rerun tests",
+    "phases": ("Scan", "Prioritize", "Repair", "Verify"),
 }
 
-# Phase 1: Scan — parallel review of all source files
-src_files = [
-    'src/auth/service.py',
-    'src/auth/routes.py',
-    'src/auth/admin.py',
-    'src/auth/rate_limit.py',
-    'src/auth/audit.py',
-    'src/auth/roles.py',
-    'src/utils/security.py',
-]
 
-findings = await parallel(
-    [lambda f=f: agent(
-        f"Review {f} for bugs, security issues, and code quality. "
-        f"Return a list of findings with severity (critical/high/medium/low), "
-        f"line number, and description.",
-        { phase: 'Scan', label: f'review:{f}' }
-    ) for f in src_files]
-)
+async def main(ctx, args):
+    options = args or {}
+    target = options.get("target", "src/")
+    test_command = options.get("test_command", "python -m pytest tests/ -v --tb=short")
 
-# Flatten and count
-all_findings = [f for batch in findings if batch for f in (batch if isinstance(batch, list) else [batch])]
-ctx.log(f"Found {len(all_findings)} findings across {len(src_files)} files")
+    ctx.phase("Scan")
+    review_prompts = [
+        (
+            "correctness",
+            f"Review {target} for concrete correctness defects. Cite file and line, "
+            "state the failure mechanism, and propose a test that exposes it.",
+        ),
+        (
+            "security",
+            f"Review {target} for authentication, authorization, injection, secret, "
+            "and race-condition risks. Separate confirmed findings from hypotheses.",
+        ),
+        (
+            "tests",
+            "Inspect the current tests and identify uncovered planted faults or tests "
+            "that encode broken behavior as success.",
+        ),
+    ]
+    reviews = await ctx.parallel([
+        lambda label=label, prompt=prompt: ctx.agent(prompt, label=f"review:{label}")
+        for label, prompt in review_prompts
+    ])
+    valid_reviews = [review for review in reviews if review]
+    ctx.log(f"Collected {len(valid_reviews)}/{len(review_prompts)} review reports")
 
-# Phase 2: Fix — implement the TODO stubs
-features = ['password_reset', 'email_verify']
-fix_results = await pipeline(
-    features,
-    lambda feat: agent(
-        f"Read src/auth/{feat}.py and implement the TODO stubs. "
-        f"Follow the docstring instructions and project conventions. "
-        f"Run tests after implementation.",
-        { phase: 'Fix', label: f'implement:{feat}' }
+    ctx.phase("Prioritize")
+    diagnosis = await ctx.agent(
+        "Cross-check the following reports against the repository. Select at most "
+        "two confirmed, high-impact defects. For each one provide evidence, the "
+        "expected failing test, and a minimal repair boundary. Do not edit files.\n\n"
+        + "\n\n---\n\n".join(valid_reviews),
+        label="evidence-review",
+        tools=["read_file", "grep_files", "glob_files", "run_command"],
     )
-)
 
-ctx.log(f"Implemented {len([r for r in fix_results if r])} features")
+    ctx.phase("Repair")
+    repair = await ctx.agent(
+        "Implement only the confirmed defects in this evidence review. Preserve the "
+        "project architecture and add or strengthen regression tests. Run the "
+        f"targeted tests before returning.\n\n{diagnosis or 'No confirmed diagnosis.'}",
+        label="bounded-repair",
+    )
 
-# Phase 3: Verify — run full test suite
-verify = await agent(
-    "Run the full test suite: python -m pytest tests/ -v --tb=short\n"
-    "Report total, passed, failed, skipped. If any fail, identify root cause.",
-    { phase: 'Verify', label: 'test-suite' }
-)
+    ctx.phase("Verify")
+    verification = await ctx.agent(
+        f"Run exactly: {test_command}\n"
+        "Do not change code. Report command, exit code, passed/failed/skipped counts, "
+        "and any remaining failure evidence.",
+        label="independent-verification",
+        tools=["read_file", "run_command"],
+    )
 
-return {
-    'findings_count': len(all_findings),
-    'features_implemented': len([r for r in fix_results if r]),
-    'verification': verify,
-}
+    return {
+        "meta": META,
+        "reviews": len(valid_reviews),
+        "diagnosis": diagnosis,
+        "repair": repair,
+        "verification": verification,
+        "verified_by_research_controller": False,
+    }

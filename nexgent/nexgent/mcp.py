@@ -2,9 +2,9 @@
 
 Implements Claude Code-style MCP support:
 - MCP server configuration management (.mcp.json)
-- Multiple transport protocols (stdio, HTTP, SSE, WebSocket)
+- stdio transport (HTTP, SSE, and WebSocket are declared but not implemented)
 - Tool discovery and registration
-- OAuth authentication support
+- Authentication configuration fields for future non-stdio transports
 - Server lifecycle management
 - /mcp command for status
 - Resource references (@server:protocol://resource)

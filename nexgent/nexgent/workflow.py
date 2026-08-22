@@ -28,6 +28,7 @@ import time
 import uuid
 import json
 import asyncio
+import inspect
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
@@ -356,9 +357,10 @@ class WorkflowContext:
                     if asyncio.iscoroutinefunction(stage_fn):
                         current = await stage_fn(current, item, idx)
                     else:
-                        current = await self._loop.run_in_executor(
+                        result = await self._loop.run_in_executor(
                             None, stage_fn, current, item, idx
                         )
+                        current = await result if inspect.isawaitable(result) else result
                 except Exception as e:
                     self.log(f"  ✗ pipeline item {idx} failed: {e}")
                     return None
@@ -438,6 +440,7 @@ class WorkflowRunner:
             task=prompt,
             description="workflow-agent",
             allowed_tools=tools,
+            model=model,
             auto_approve=True,
             isolated=True,
         )
@@ -499,8 +502,9 @@ class WorkflowRunner:
             self._execute_script(run, progress_callback)
             run.status = WorkflowStatus.COMPLETED
         except BudgetExhausted:
-            run.status = WorkflowStatus.COMPLETED  # budget hit is a valid stop
-            self.logger.info(f"Workflow {run_id} completed (budget exhausted)")
+            run.status = WorkflowStatus.PAUSED
+            run.error = "budget_exhausted"
+            self.logger.info(f"Workflow {run_id} paused (budget exhausted)")
         except Exception as e:
             run.status = WorkflowStatus.FAILED
             run.error = str(e)
@@ -584,7 +588,8 @@ class WorkflowRunner:
             self._execute_script(run, progress_callback)
             run.status = WorkflowStatus.COMPLETED
         except BudgetExhausted:
-            run.status = WorkflowStatus.COMPLETED
+            run.status = WorkflowStatus.PAUSED
+            run.error = "budget_exhausted"
         except Exception as e:
             run.status = WorkflowStatus.FAILED
             run.error = str(e)
@@ -627,3 +632,30 @@ class WorkflowRunner:
 
         self.logger.info(f"Workflow saved to {filepath}")
         return filepath
+
+    def run_typed(
+        self,
+        graph,
+        executors: dict[str, Callable],
+        store,
+        *,
+        external_inputs: Optional[dict[str, Any]] = None,
+        progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+    ):
+        """Run or resume a durable typed workflow through the shared engine.
+
+        This is the migration boundary for the legacy Python DSL: callers that
+        need crash-safe execution declare ``WorkflowNode`` contracts and use
+        this method.  Re-instantiating ``WorkflowRunner`` with the same graph
+        and store resumes successful idempotent primitives from SQLite.
+        """
+
+        from .runtime.graph import PersistentTypedDAGRunner
+
+        runner = PersistentTypedDAGRunner(
+            graph,
+            executors,
+            store,
+            event_callback=progress_callback,
+        )
+        return asyncio.run(runner.run(external_inputs or {}))

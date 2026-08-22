@@ -4,10 +4,10 @@
 setup(
     name="nexgent",
     version="0.5.0",
-    description="A production-grade model-agnostic AI agent harness, following Claude Code architecture patterns",
+    description="A traceable, self-diagnosing Coding Harness for long-running research simulations",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
-    author="Agent Learning Hub",
+    author="csxq0605",
     url="https://github.com/csxq0605/Nexgent",
     license="MIT",
     packages=find_packages(exclude=("tests", "tests.*")),
@@ -36,6 +36,7 @@ setup(
         "console_scripts": [
             "nexgent=nexgent.cli:main",
             "nexgent-gui=nexgent.gui.app:main",
+            "nexgent-verify-run=nexgent.runtime.verify:main",
         ],
     },
     classifiers=[

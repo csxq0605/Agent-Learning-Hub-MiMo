@@ -1,6 +1,8 @@
-﻿"""Nexgent - A production-grade model-agnostic AI agent harness.
+﻿"""Nexgent - a traceable, self-diagnosing Coding Harness.
 
-Architecture follows Claude Code patterns:
+The current package provides a model-agnostic Harness foundation while the
+long-running execution layer adds typed run state, dependency tracing,
+controlled fault recovery, and independently verified reruns. Existing building blocks:
 - Ch2: Dependency injection, circuit breaker, state machine
 - Ch3: Fail-closed tool defaults, concurrency markers, input validation
 - Ch4: 4-stage permission pipeline, rule-based matching

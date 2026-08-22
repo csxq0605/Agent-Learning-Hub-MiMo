@@ -257,7 +257,10 @@ def _resume_by_session_id(session_dir: str, session_id: str):
 def _build_parser():
     """Build the argument parser. Extracted for testability."""
     parser = argparse.ArgumentParser(
-        description="Nexgent - AI Agent powered by Xiaomi MiMo model"
+        description=(
+            "Nexgent - a traceable, self-diagnosing Coding Harness for "
+            "long-running research code and simulations"
+        )
     )
     parser.add_argument("--task", "-t", help="Run a single task and exit")
     parser.add_argument("--model", "-m", default=None, help=f"Model name (default: {NEXGENT_MODEL})")
@@ -416,9 +419,20 @@ def main():
     elif args.task:
         task = args.task
 
+    # One runtime owns durable run recording for every interactive frontend.
+    # The raw NexgentAgent remains available as a library primitive, while all
+    # user-facing task execution below crosses this durable Harness boundary.
+    from .runtime.service import NexgentRuntime
+    runtime = NexgentRuntime(
+        os.getcwd(),
+        harness=harness,
+        session=session,
+        session_dir=session_dir,
+    )
+
     if task:
         start_time = time.time()
-        result = harness.run(task, session=session)
+        result = runtime.run_agent_task(task)
         duration = time.time() - start_time
         # Retrieve session info for structured output
         last_session = getattr(harness, '_last_session', None) or session
@@ -460,13 +474,7 @@ def main():
     if sys.stdin.isatty() and sys.stdout.isatty() and args.output_format == "text":
         if not args.tui:
             try:
-                from .runtime.service import NexgentRuntime
                 from .gui.app import launch_gui
-                runtime = NexgentRuntime(
-                    os.getcwd(),
-                    harness=harness,
-                    session=session,
-                )
                 launch_gui(os.getcwd(), runtime=runtime)
                 scheduler.stop()
                 return
@@ -484,6 +492,7 @@ def main():
                 scheduler=scheduler,
                 scheduled_prompts=_scheduled_prompts,
                 scheduled_lock=_scheduled_lock,
+                runtime=runtime,
             )
             return
         except ImportError:
@@ -630,7 +639,8 @@ def main():
             # Update status bar to executing
             get_status_bar().set_thinking(harness.model)
             # Streaming is now the default - tokens are printed directly by the agent
-            harness.run(user_input, session)
+            runtime.session = session
+            runtime.run_agent_task(user_input)
             # Status bar set to idle after agent completes
             get_status_bar().set_idle()
         except KeyboardInterrupt:

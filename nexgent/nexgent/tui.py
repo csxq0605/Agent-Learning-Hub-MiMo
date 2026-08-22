@@ -138,9 +138,10 @@ class MiMoTUI(App):
 
     def __init__(self, harness, session, memory_store, checkpoint_manager,
                  session_dir, config_watcher, scheduler, scheduled_prompts,
-                 scheduled_lock, **kwargs):
+                 scheduled_lock, runtime=None, **kwargs):
         super().__init__(**kwargs)
         self.harness = harness
+        self.runtime = runtime
         self.session = session
         self.memory_store = memory_store
         self.checkpoint_manager = checkpoint_manager
@@ -795,7 +796,11 @@ class MiMoTUI(App):
                 # harness.run() outputs through builtins.print (routed to queue)
                 # and display.py override callbacks. Error strings (e.g.
                 # "[ERROR] Circuit breaker open") are returned, not raised.
-                result = self.harness.run(task, self.session)
+                if self.runtime is not None:
+                    self.runtime.session = self.session
+                    result = self.runtime.run_agent_task(task)
+                else:
+                    result = self.harness.run(task, self.session)
                 # Display error/limit results that don't go through print()
                 if result and isinstance(result, str) and result.startswith("["):
                     _output_queue.put(("write", f"[red]{result}[/red]"))
@@ -1242,7 +1247,7 @@ class MiMoTUI(App):
 
 def run_tui(harness, session, memory_store, checkpoint_manager,
             session_dir, config_watcher, scheduler, scheduled_prompts,
-            scheduled_lock) -> None:
+            scheduled_lock, runtime=None) -> None:
     """Launch the Textual TUI application."""
     app = MiMoTUI(
         harness=harness,
@@ -1254,5 +1259,6 @@ def run_tui(harness, session, memory_store, checkpoint_manager,
         scheduler=scheduler,
         scheduled_prompts=scheduled_prompts,
         scheduled_lock=scheduled_lock,
+        runtime=runtime,
     )
     app.run()

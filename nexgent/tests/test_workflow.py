@@ -302,6 +302,20 @@ class TestWorkflowContext:
         finally:
             loop.close()
 
+    def test_pipeline_awaits_coroutine_returned_by_sync_wrapper(self):
+        ctx, run, loop = self._make_ctx()
+        try:
+            async def async_stage(item):
+                return f"{item}-async"
+
+            def wrapper(prev, item, idx):
+                return async_stage(prev)
+
+            results = loop.run_until_complete(ctx.pipeline(["a", "b"], wrapper))
+            assert results == ["a-async", "b-async"]
+        finally:
+            loop.close()
+
     def test_pipeline_empty(self):
         ctx, run, loop = self._make_ctx()
         try:
@@ -402,6 +416,35 @@ def main(ctx, args):
         )
         assert run.budget.total == 10000
         assert run.budget.spent >= 0
+
+    def test_budget_exhaustion_pauses_instead_of_claiming_completion(self):
+        runner = WorkflowRunner(parent_harness=MockHarness())
+        script = """
+def main(ctx, args):
+    ctx.budget.record(1)
+"""
+        run = runner.run(script_source=script, budget_total=1)
+        assert run.status == WorkflowStatus.PAUSED
+        assert run.error == "budget_exhausted"
+
+    def test_model_override_reaches_subagent_config(self, monkeypatch):
+        from nexgent.subagent import SubAgentManager, SubAgentResult, SubAgentState
+
+        captured = {}
+
+        def fake_run_single(self, config):
+            captured["model"] = config.model
+            return SubAgentResult(
+                subagent_id="child-1",
+                task=config.task,
+                state=SubAgentState.COMPLETED,
+                result="ok",
+            )
+
+        monkeypatch.setattr(SubAgentManager, "run_single", fake_run_single)
+        runner = WorkflowRunner(parent_harness=MockHarness())
+        assert runner._run_single_agent("task", model="research-model") == "ok"
+        assert captured["model"] == "research-model"
 
     def test_resume_not_found(self):
         runner = WorkflowRunner(parent_harness=MockHarness())

@@ -8,7 +8,7 @@ import os
 import secrets
 import subprocess
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .events import RuntimeEventKind, RuntimeEventSink, emit_event
 from .interactions import InteractionBroker
@@ -46,6 +46,9 @@ class NexgentRuntime:
         event_sink: Optional[RuntimeEventSink] = None,
         interaction_broker: Optional[InteractionBroker] = None,
         agent_options: Optional[dict] = None,
+        run_store: Any = None,
+        record_runs: bool = True,
+        session_dir: os.PathLike[str] | str | None = None,
     ) -> None:
         from ..agent import NexgentAgent
         from ..command_service import CommandService
@@ -54,10 +57,16 @@ class NexgentRuntime:
         from ..models import get_model_registry
 
         self.project_root = Path(project_root).expanduser().resolve()
-        self.session_dir = self.project_root / ".nexgent" / "sessions"
+        inherited_session_dir = getattr(session, "auto_save_dir", None)
+        self.session_dir = Path(
+            session_dir
+            or inherited_session_dir
+            or self.project_root / ".nexgent" / "sessions"
+        ).expanduser().resolve()
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.event_sink = event_sink
         self.interaction_broker = interaction_broker or InteractionBroker()
+        self.record_runs = record_runs
         registry = get_model_registry()
         project_models = self.project_root / "models.json"
         registry.reload(str(project_models) if project_models.exists() else None)
@@ -65,8 +74,20 @@ class NexgentRuntime:
         if harness is None and "model" not in options:
             options["model"] = registry.get_default("main").model_name
         self.harness = harness or NexgentAgent(**options)
+        if self.record_runs:
+            from .recorder import RunRecorder
+            from .store import SQLiteRunStore
+            self.run_store = run_store or SQLiteRunStore(
+                self.project_root / ".nexgent" / "runs"
+            )
+            self.run_recorder = RunRecorder(self.run_store, self.project_root)
+        else:
+            self.run_store = run_store
+            self.run_recorder = None
+        self._active_run_context = None
         self.last_command_action = "continue"
         self.harness._runtime_event_callback = self._on_harness_event
+        self.harness._runtime_event_callback_required = self.record_runs
         self.harness._subagent_event_callback = self._on_subagent_event
         self.harness._subagent_session_dir = str(self.session_dir / "agents")
         existing_subagent_manager = getattr(self.harness, "_subagent_manager", None)
@@ -102,6 +123,15 @@ class NexgentRuntime:
     def _on_subagent_event(self, payload: dict[str, Any]) -> None:
         subagent_id = str(payload.get("subagent_id") or "unknown")
         event_kind = payload.get("event_kind")
+        if self.run_recorder is not None and self._active_run_context is not None:
+            from .contracts import SourceType
+            self.run_recorder.record_runtime_event(
+                self._active_run_context,
+                str(event_kind or "subagent_changed"),
+                payload,
+                source_id=f"subagent:{subagent_id}",
+                source_type=SourceType.SUBAGENT,
+            )
         if event_kind:
             event_payload = {
                 key: value
@@ -123,6 +153,13 @@ class NexgentRuntime:
         )
 
     def _on_harness_event(self, kind: str, payload: dict[str, Any]) -> None:
+        if self.run_recorder is not None and self._active_run_context is not None:
+            self.run_recorder.record_runtime_event(
+                self._active_run_context,
+                kind,
+                payload,
+                source_id="main",
+            )
         emit_event(
             self.event_sink,
             RuntimeEventKind(kind),
@@ -138,45 +175,321 @@ class NexgentRuntime:
         self.session.add_message("user", value, injected=True)
         self._emit(RuntimeEventKind.NOTICE, message=f"Guidance injected: {value}")
 
+    def _start_tracked_run(self, objective: str):
+        if self.run_recorder is None:
+            return None
+        if self._active_run_context is not None:
+            raise RuntimeError("a tracked run is already active in this runtime")
+        registry = getattr(self.harness, "registry", None)
+        tool_catalog = []
+        if registry is not None and hasattr(registry, "list_all"):
+            tool_catalog = [
+                {
+                    "name": tool.name,
+                    "parameters": getattr(tool, "parameters", {}),
+                    "permission": str(getattr(tool, "permission", "unknown")),
+                }
+                for tool in registry.list_all()
+            ]
+        context = self.run_recorder.start_run(
+            objective,
+            session_id=self.session.session_id,
+            model_profile=getattr(self.harness, "model", None),
+            tool_catalog=tool_catalog,
+        )
+        self._active_run_context = context
+        return context
+
+    def _execute_tracked(self, objective: str, operation: Callable[[], str]) -> str:
+        """Execute one frontend action inside the durable Harness envelope."""
+
+        run_context = self._start_tracked_run(objective)
+        self._emit(
+            RuntimeEventKind.RUN_STARTED,
+            text=objective,
+            durable_run_id=run_context.run_id if run_context else None,
+        )
+        try:
+            result = operation() or ""
+            if self.run_recorder is not None and run_context is not None:
+                self.run_recorder.finish_unverified(run_context, result)
+            self._emit(
+                RuntimeEventKind.RUN_FINISHED,
+                result=result,
+                session_id=self.session.session_id,
+                messages=len(self.session.messages),
+                durable_run_id=run_context.run_id if run_context else None,
+                verification="not_run",
+            )
+            return result
+        except Exception as exc:
+            if self.run_recorder is not None and run_context is not None:
+                try:
+                    self.run_recorder.fail(run_context, exc)
+                except Exception as record_exc:
+                    raise RuntimeError(
+                        f"run failed and durable failure recording also failed: {record_exc}"
+                    ) from exc
+            self._emit(RuntimeEventKind.ERROR, message=str(exc), exception=type(exc).__name__)
+            raise
+        finally:
+            self._active_run_context = None
+
+    def run_agent_task(self, task: str) -> str:
+        """Run a prompt without capturing console output, for CLI and TUI use."""
+
+        value = task.strip()
+        if not value:
+            return ""
+
+        from ..skills import SkillSubstitutor
+        from ..tools.interactive import set_interaction_broker
+
+        set_interaction_broker(self.interaction_broker)
+        SkillSubstitutor.set_interaction_broker(self.interaction_broker)
+
+        def run_agent() -> str:
+            previous = Path.cwd()
+            try:
+                os.chdir(self.project_root)
+                return self.harness.run(task, self.session)
+            finally:
+                os.chdir(previous)
+
+        try:
+            return self._execute_tracked(value, run_agent)
+        finally:
+            set_interaction_broker(None)
+            SkillSubstitutor.set_interaction_broker(None)
+
     def handle_input(self, text: str) -> str:
         value = text.strip()
         if not value:
             return ""
+        if value == "/harness" or value.startswith("/harness "):
+            return self._handle_harness_command(value)
+        if value.startswith("/goal run "):
+            return self._handle_harness_command(
+                "/harness run " + value[len("/goal run "):]
+            )
         self.last_command_action = "continue"
-        self._emit(RuntimeEventKind.RUN_STARTED, text=value)
         writer = _EventWriter(self.event_sink)
         from ..tools.interactive import set_interaction_broker
         from ..skills import SkillSubstitutor
         set_interaction_broker(self.interaction_broker)
         SkillSubstitutor.set_interaction_broker(self.interaction_broker)
-        try:
+
+        def dispatch() -> str:
             with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
                 if value.startswith("/"):
-                    result = self._handle_interactive_command(value)
-                elif value.startswith("!"):
-                    result = self._run_shell(value[1:])
-                else:
-                    from ..file_references import FileReferenceResolver
-                    prompt = FileReferenceResolver.resolve_and_format(value, str(self.project_root))
-                    previous = Path.cwd()
-                    try:
-                        os.chdir(self.project_root)
-                        result = self.harness.run(prompt, self.session)
-                    finally:
-                        os.chdir(previous)
-            self._emit(
-                RuntimeEventKind.RUN_FINISHED,
-                result=result or "",
-                session_id=self.session.session_id,
-                messages=len(self.session.messages),
-            )
+                    return self._handle_interactive_command(value)
+                if value.startswith("!"):
+                    return self._run_shell(value[1:])
+
+                from ..file_references import FileReferenceResolver
+
+                prompt = FileReferenceResolver.resolve_and_format(value, str(self.project_root))
+                previous = Path.cwd()
+                try:
+                    os.chdir(self.project_root)
+                    return self.harness.run(prompt, self.session)
+                finally:
+                    os.chdir(previous)
+
+        try:
+            result = self._execute_tracked(value, dispatch)
             return result or writer.getvalue()
-        except Exception as exc:
-            self._emit(RuntimeEventKind.ERROR, message=str(exc), exception=type(exc).__name__)
-            raise
         finally:
             set_interaction_broker(None)
             SkillSubstitutor.set_interaction_broker(None)
+
+    def _handle_harness_command(self, value: str) -> str:
+        """Run a real coding task against an explicit independent check."""
+
+        import json
+        import shlex
+
+        from ..skills import SkillSubstitutor
+        from ..tools.interactive import set_interaction_broker
+        from .coding_task import run_coding_task
+
+        parts = shlex.split(value)
+        if self.run_store is None:
+            raise RuntimeError("verified harness runs require durable run recording")
+
+        def option(name: str, default: Optional[str] = None) -> Optional[str]:
+            if name not in parts:
+                return default
+            index = parts.index(name)
+            if index + 1 >= len(parts):
+                raise ValueError(f"{name} requires a value")
+            return parts[index + 1]
+
+        if len(parts) == 1 or parts[1] in {"help", "--help", "-h"}:
+            return (
+                "Verified Coding Harness commands:\n"
+                "  /harness run --check \"python -m pytest -q\" "
+                "--task \"Fix the failing tests\"\n"
+                "  /harness list\n"
+                "  /harness status <run-id>\n"
+                "  /harness resume <run-id> [--attempts 3] [--timeout 120]\n"
+                "  /harness export <run-id> [--output path.jsonl]\n"
+                "The Agent keeps its normal permission gates; only the explicit "
+                "acceptance command can accept the run."
+            )
+
+        command = parts[1]
+        if command == "list":
+            runs = [
+                run.to_dict()
+                for run in self.run_store.list_runs()
+                if run.mode.value == "coding"
+            ]
+            return json.dumps(runs, ensure_ascii=False, indent=2, sort_keys=True)
+        if command == "status":
+            if len(parts) != 3:
+                raise ValueError("/harness status requires one run id")
+            bundle = self.run_store.export_run(parts[2])
+            payload = {
+                "run": bundle["run"],
+                "attempts": len(bundle["attempts"]),
+                "events": len(bundle["events"]),
+                "faults": len(bundle["faults"]),
+                "diagnoses": len(bundle["diagnoses"]),
+                "recoveries": len(bundle["recoveries"]),
+                "verifications": len(bundle["verifications"]),
+            }
+            return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        if command == "export":
+            if len(parts) < 3:
+                raise ValueError("/harness export requires a run id")
+            run_id = parts[2]
+            destination = Path(
+                option(
+                    "--output",
+                    str(self.project_root / ".nexgent" / "exports" / f"{run_id}.jsonl"),
+                )
+            ).expanduser().resolve()
+            from ..permissions import Permission
+
+            if not self.harness.perms.check(
+                Permission.WRITE,
+                f"harness_export({destination})",
+                {"path": str(destination)},
+            ):
+                raise PermissionError("Harness export blocked by permission system")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                self.run_store.export_run_jsonl(run_id), encoding="utf-8"
+            )
+            return json.dumps(
+                {"run_id": run_id, "export_path": str(destination)},
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        if command not in {"run", "resume"}:
+            raise ValueError(f"unknown harness command: {parts[1]}")
+
+        resume_run_id = None
+        if command == "resume":
+            if len(parts) < 3:
+                raise ValueError("/harness resume requires a run id")
+            resume_run_id = parts[2]
+            run = self.run_store.get_run(resume_run_id)
+            if run.mode.value != "coding":
+                raise ValueError("only Coding Harness runs can be resumed")
+            goal_events = [
+                event
+                for event in self.run_store.list_events(resume_run_id)
+                if event.payload.get("stage") == "goal"
+            ]
+            if not goal_events:
+                raise RuntimeError("durable Harness goal event is missing")
+            task = run.objective
+            check_command = str(
+                goal_events[0].payload.get("acceptance_command") or ""
+            )
+        else:
+            task = option("--task")
+            check_command = option("--check")
+            if not task or not check_command:
+                raise ValueError(
+                    "/harness run requires quoted --task and --check values"
+                )
+        max_attempts = int(option("--attempts", "3"))
+        timeout = float(option("--timeout", "120"))
+        if self._active_run_context is not None:
+            raise RuntimeError("a tracked run is already active in this runtime")
+
+        def publish_progress(payload: dict[str, Any]) -> None:
+            self._emit(
+                RuntimeEventKind.WORKFLOW_CHANGED,
+                harness=True,
+                **payload,
+            )
+
+        def execute_agent(prompt: str) -> str:
+            previous = Path.cwd()
+            try:
+                os.chdir(self.project_root)
+                return self.harness.run(prompt, self.session)
+            finally:
+                os.chdir(previous)
+
+        self._emit(
+            RuntimeEventKind.RUN_STARTED,
+            text=task,
+            harness=True,
+            acceptance_command=check_command,
+            resumed_run_id=resume_run_id,
+        )
+        set_interaction_broker(self.interaction_broker)
+        SkillSubstitutor.set_interaction_broker(self.interaction_broker)
+        try:
+            from ..permissions import Permission
+            from ..tools.shell import _is_readonly
+
+            permission = (
+                Permission.READ if _is_readonly(check_command) else Permission.WRITE
+            )
+            if not self.harness.perms.check(
+                permission,
+                f"harness_acceptance({check_command[:100]})",
+                {"command": check_command},
+            ):
+                raise PermissionError("acceptance command blocked by permission system")
+            summary = run_coding_task(
+                self.run_store,
+                self.project_root,
+                task,
+                check_command,
+                execute_agent,
+                max_attempts=max_attempts,
+                check_timeout=timeout,
+                progress_callback=publish_progress,
+                context_callback=lambda context: setattr(
+                    self, "_active_run_context", context
+                ),
+                resume_run_id=resume_run_id,
+            )
+        finally:
+            self._active_run_context = None
+            set_interaction_broker(None)
+            SkillSubstitutor.set_interaction_broker(None)
+        payload = summary.to_dict()
+        self._emit(
+            RuntimeEventKind.RUN_FINISHED,
+            result=summary.reason,
+            harness=True,
+            harness_run_id=summary.run_id,
+            status=summary.status.value,
+            attempts=summary.attempts,
+            recoveries=summary.recoveries,
+            changed_files=list(summary.changed_files),
+            strategy_reused=summary.strategy_reused,
+        )
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
 
     def _handle_interactive_command(self, value: str) -> str:
         """Resolve commands whose CLI implementation reads from stdin."""

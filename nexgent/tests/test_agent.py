@@ -6,8 +6,9 @@ Uses real LLM API calls — no mocking.
 import os
 import pytest
 import json
+from types import SimpleNamespace
 from nexgent.agent import (
-    NexgentAgent, retry_with_backoff,
+    AgentDeps, NexgentAgent, retry_with_backoff,
 )
 from nexgent.context import Session
 from nexgent.tools import file_ops
@@ -79,6 +80,44 @@ class TestRetryWithBackoff:
         result = retry_with_backoff(fail_then_succeed, max_retries=3, base_delay=0.001)
         assert result == "success"
         assert call_count[0] == 2
+
+
+def test_agent_emits_redaction_safe_model_lifecycle_events(monkeypatch):
+    fake_client = SimpleNamespace()
+    harness = NexgentAgent(
+        bare=True,
+        stream=False,
+        deps=AgentDeps(llm_client_factory=lambda **kwargs: fake_client),
+    )
+    monkeypatch.setattr("nexgent.agent.require_api_key", lambda: "test-key")
+    harness._call_llm = lambda *args, **kwargs: SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content="done", tool_calls=None),
+            )
+        ]
+    )
+    emitted = []
+    harness._runtime_event_callback = lambda kind, payload: emitted.append(
+        (kind, payload)
+    )
+
+    assert harness.run("do not persist this prompt", Session("events")) == "done"
+
+    assert [kind for kind, _ in emitted] == [
+        "message_started",
+        "message_finished",
+    ]
+    assert emitted[0][1] == {"step": 1, "model": harness.model}
+    assert emitted[1][1] == {
+        "step": 1,
+        "model": harness.model,
+        "finish_reason": "stop",
+        "has_content": True,
+        "tool_call_ids": [],
+    }
+    assert "do not persist this prompt" not in repr(emitted)
 
 
 @requires_api

@@ -24,6 +24,7 @@ class RuntimeBridge(QObject):
     queue_cleared = pyqtSignal(int)
     input_finished = pyqtSignal(str, str)
     exit_requested = pyqtSignal()
+    _worker_drained = pyqtSignal(object)
 
     def __init__(self, runtime, parent=None):
         super().__init__(parent)
@@ -35,6 +36,7 @@ class RuntimeBridge(QObject):
         self._threads: set[threading.Thread] = set()
         runtime.set_event_sink(self._on_event)
         runtime.interaction_broker.set_handler(self._on_interaction)
+        self._worker_drained.connect(self._finish_worker)
 
     @property
     def busy(self):
@@ -99,18 +101,28 @@ class RuntimeBridge(QObject):
             self._emit_signal(self.run_failed, str(exc))
         finally:
             with self._state_lock:
-                self._threads.discard(threading.current_thread())
-                next_input = (
-                    self._pending.popleft()
-                    if self._pending and not self._closing
-                    else None
-                )
-                self._busy = bool(next_input)
-            if next_input:
-                self._emit_signal(self.run_started, next_input)
-                self._start_thread(next_input)
-            else:
-                self._emit_signal(self.busy_changed, False)
+                if self._closing:
+                    self._threads.discard(threading.current_thread())
+                    self._busy = False
+                    return
+            self._emit_signal(self._worker_drained, threading.current_thread())
+
+    def _finish_worker(self, worker: threading.Thread) -> None:
+        """Advance the queue only after prior runtime events reach the Qt thread."""
+
+        with self._state_lock:
+            self._threads.discard(worker)
+            next_input = (
+                self._pending.popleft()
+                if self._pending and not self._closing
+                else None
+            )
+            self._busy = bool(next_input)
+        if next_input:
+            self._emit_signal(self.run_started, next_input)
+            self._start_thread(next_input)
+        else:
+            self._emit_signal(self.busy_changed, False)
 
     def _on_event(self, event: RuntimeEvent) -> None:
         self._emit_signal(self.event_received, event)

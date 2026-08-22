@@ -20,6 +20,9 @@ SLASH_COMMANDS = [
     "/tasks", "/tasks list", "/tasks show", "/tasks cancel", "/tasks cleanup",
     # Goal management
     "/goal", "/goal clear",
+    # Long-running verified Coding Harness
+    "/harness", "/harness run", "/harness list", "/harness status",
+    "/harness resume", "/harness export",
     # In-flight guidance
     "/btw",
     # Skills
@@ -39,5 +42,5 @@ SLASH_COMMANDS = [
 SUGGEST_COMMANDS = [
     "/help", "/quit", "/exit", "/q", "/clear", "/tools",
     "/compact", "/context", "/memory",
-    "/agents", "/tasks", "/goal", "/skills", "/mcp", "/btw",
+    "/agents", "/tasks", "/goal", "/harness", "/skills", "/mcp", "/btw",
 ]

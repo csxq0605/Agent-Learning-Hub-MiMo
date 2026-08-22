@@ -235,6 +235,41 @@ class MainWindow(QMainWindow):
             self.agent.append_activity(text, "main")
         elif event.kind == RuntimeEventKind.SUBAGENT_CHANGED:
             self._handle_subagent_event(event)
+        elif (
+            event.kind == RuntimeEventKind.WORKFLOW_CHANGED
+            and event.payload.get("harness")
+        ):
+            label = "Harness"
+            stage = str(event.payload.get("stage") or "workflow")
+            source = str(event.payload.get("source") or "runtime")
+            detail = f"{label} · {stage} · {source}"
+            status = event.payload.get("status")
+            signal = event.payload.get("signal")
+            suspect = event.payload.get("suspect_ref")
+            if status:
+                detail += f" · {status}"
+            if signal:
+                detail += f" — {signal}"
+            if suspect:
+                detail += f" — suspect {suspect}"
+            self.agent.append_activity(detail, "main")
+            self.statusBar().showMessage(f"{label}: {stage}")
+        elif (
+            event.kind == RuntimeEventKind.RUN_FINISHED
+            and event.payload.get("harness")
+        ):
+            label = "Harness"
+            status = str(event.payload.get("status") or "finished")
+            attempts = int(event.payload.get("attempts") or 0)
+            recoveries = int(event.payload.get("recoveries") or 0)
+            reason = str(event.payload.get("result") or "").strip()
+            message = (
+                f"{label} run {status}: attempts={attempts}, "
+                f"recoveries={recoveries}."
+            )
+            if reason:
+                message += f"\n{reason}"
+            self.agent.add_message("Nexgent", message, "main")
         elif event.kind in {
             RuntimeEventKind.TOOL_STARTED,
             RuntimeEventKind.TOOL_FINISHED,

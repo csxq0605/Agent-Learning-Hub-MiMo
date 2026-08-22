@@ -23,6 +23,10 @@ coverage.json
 **/.nexgent/sessions/
 .nexgent/checkpoints/
 .nexgent/memory/
+.nexgent/runs/
+**/.nexgent/runs/
+.nexgent/exports/
+**/.nexgent/exports/
 
 # IDE
 .claude/

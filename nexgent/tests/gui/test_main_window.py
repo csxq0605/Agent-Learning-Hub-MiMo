@@ -3,6 +3,7 @@ from PyQt6.QtCore import Qt
 from nexgent.gui.main_window import MainWindow
 from nexgent.gui.widgets.agent_panel import Composer
 from nexgent.runtime.events import RuntimeEvent, RuntimeEventKind
+from nexgent.runtime.service import NexgentRuntime
 
 
 def set_composer_text(composer, text):
@@ -80,6 +81,41 @@ def test_failed_run_updates_status_and_conversation(qtbot, fake_runtime):
     window._run_failed("provider unavailable")
     assert window.statusBar().currentMessage() == "Run failed"
     assert "provider unavailable" in window.agent.messages.toPlainText()
+
+
+def test_verified_harness_progress_and_result_are_visible(qtbot, fake_runtime):
+    window = MainWindow(fake_runtime)
+    qtbot.addWidget(window)
+    window._runtime_event(
+        RuntimeEvent(
+            RuntimeEventKind.WORKFLOW_CHANGED,
+            "runtime",
+            {
+                "harness": True,
+                "stage": "diagnose",
+                "suspect_ref": "changed-app-py",
+            },
+        )
+    )
+    window._runtime_event(
+        RuntimeEvent(
+            RuntimeEventKind.RUN_FINISHED,
+            "runtime",
+            {
+                "harness": True,
+                "status": "succeeded",
+                "attempts": 2,
+                "recoveries": 1,
+                "result": "acceptance command passed",
+            },
+        )
+    )
+
+    text = window.agent.messages.toPlainText()
+    assert "Harness · diagnose · runtime" in text
+    assert "suspect changed-app-py" in text
+    assert "Harness run succeeded" in text
+    assert "attempts=2" in text
 
 
 def test_clear_command_clears_visible_conversation(qtbot, fake_runtime):

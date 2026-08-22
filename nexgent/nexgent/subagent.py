@@ -50,9 +50,8 @@ _RESOURCE_WARNING_RATIO = 0.80  # warn at 80% of any configured limit
 class ResourceMonitor:
     """Tracks SubAgent resource usage and emits warnings.
 
-    Mirrors Claude Code's approach: monitor everything, warn when
-    approaching thresholds, auto-compact when needed, but never
-    hard-block execution.
+    Observes configured limits and warns when thresholds are approached.
+    It does not compact or hard-block execution.
 
     When limits are 0 (unlimited), monitoring still runs — it just
     never triggers warnings since there's no ceiling to approach.

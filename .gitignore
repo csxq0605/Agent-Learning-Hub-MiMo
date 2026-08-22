@@ -5,7 +5,6 @@ __pycache__/
 *.log
 *.png
 *.jpg
-eval_report.json
 logs/
 .venv/
 venv/
@@ -17,3 +16,7 @@ venv/
 .e2e_work/
 .coverage
 coverage.json
+.nexgent/runs/
+.nexgent/exports/
+**/.nexgent/runs/
+**/.nexgent/exports/

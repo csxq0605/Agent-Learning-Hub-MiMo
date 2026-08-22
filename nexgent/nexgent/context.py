@@ -1,7 +1,7 @@
 ﻿"""Context management - progressive compression following Claude Code architecture.
 
-Implements Ch7 patterns:
-- Four-level progressive compression (snip → microcompact → collapse → autocompact)
+Provides Ch7-style primitives:
+- Four-level progressive compression (snip → microcompact → collapse → compact)
 - Circuit breaker for compression failures
 - Compact boundary messages
 - Token budget tracking
@@ -570,7 +570,7 @@ def _filter_orphan_tool_results(messages: list) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Main compaction entry point (Ch7: progressive compression)
+# Main explicit compaction entry point (Ch7: progressive compression)
 # ---------------------------------------------------------------------------
 def estimate_tokens(messages: list, model: str = "gpt-4", use_tiktoken: bool = True) -> int:
     """Estimate token count for a message list.

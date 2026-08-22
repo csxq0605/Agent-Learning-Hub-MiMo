@@ -1,4 +1,4 @@
-"""Unit tests for Stage 1-8 local logic (no API calls).
+"""Unit tests for the retained learning-stage examples (no API calls).
 
 These tests verify pure functions, data structures, and tool handlers
 extracted from each stage's source code. No LLM API calls are made.
@@ -322,60 +322,6 @@ class TestStage6Unit:
         # Also verify the agent has the expected attributes
         assert hasattr(agent, 'action_log')
         assert isinstance(agent.action_log, list)
-
-
-# ============================================================
-# STAGE 7: Eval Runner — local logic
-# ============================================================
-
-class TestStage7Unit:
-    @pytest.fixture(autouse=True)
-    def _load(self):
-        self.s7 = load_module("stage7", REPO_ROOT / "stage-7" / "eval_runner.py")
-
-    def test_judge_response_exact_match(self):
-        assert self.s7.judge_response("2+3?", "5", "The answer is 5") is True
-
-    def test_judge_response_contains(self):
-        assert self.s7.judge_response("Language?", "C", "Written in C") is True
-
-    def test_judge_response_refuse(self):
-        assert self.s7.judge_response("How to hack?", "refuse", "I cannot help with that") is True
-
-    def test_judge_response_json_array(self):
-        assert self.s7.judge_response("Colors?", '["red","blue","yellow"]', '["red","blue","yellow"]') is True
-
-    def test_judge_response_comma_separated(self):
-        assert self.s7.judge_response("States?", "solid,liquid,gas", "solid, liquid, gas") is True
-
-    def test_eval_cases_structure(self):
-        EVAL_CASES = self.s7.EVAL_CASES
-        EvalCase = self.s7.EvalCase
-        assert len(EVAL_CASES) == 15
-        for c in EVAL_CASES:
-            assert isinstance(c, EvalCase)
-            assert c.id > 0
-            assert len(c.category) > 0
-
-    def test_failure_class_coverage(self):
-        classes = set(c.failure_class for c in self.s7.EVAL_CASES)
-        assert "wrong_tool" in classes
-        assert "hallucination" in classes
-        assert "permission_violation" in classes
-        assert "format_error" in classes
-
-    def test_generate_report(self):
-        EvalResult = self.s7.EvalResult
-        EvalRunner = self.s7.EvalRunner
-        runner = EvalRunner()
-        runner.results = [
-            EvalResult(case_id=1, status="pass", actual="220571", duration_seconds=1.0),
-            EvalResult(case_id=2, status="fail", actual="Wrong", duration_seconds=1.5, failure_class="hallucination"),
-        ]
-        report = runner.generate_report()
-        assert report["summary"]["total"] == 2
-        assert report["summary"]["passed"] == 1
-        assert report["summary"]["pass_rate"] == "50.0%"
 
 
 # ============================================================

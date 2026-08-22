@@ -76,7 +76,7 @@ def _parse_tool_result(result: str) -> tuple[bool, str | None, str | None]:
 # Constants (Ch7: token budget thresholds)
 # ---------------------------------------------------------------------------
 MAX_CONSECUTIVE_FAILURES = 3
-TOKEN_WARNING_THRESHOLD = 0.85  # 85% of context window — trigger auto-compact
+TOKEN_WARNING_THRESHOLD = 0.85  # Historical threshold; the loop currently warns only.
 DEFAULT_MAX_CONTEXT_TOKENS = 1_000_000  # 1M context window
 RESERVED_OUTPUT_TOKENS = 50000  # 5% of context window reserved for output
 
@@ -342,6 +342,8 @@ You help users with coding, file operations, web research, document creation, an
             callback(kind, payload)
         except Exception as exc:
             self.logger.warning(f"Runtime event callback failed: {exc}")
+            if getattr(self, "_runtime_event_callback_required", False):
+                raise
 
     def _register_tools(self):
         all_tools = (
@@ -1073,6 +1075,11 @@ You help users with coding, file operations, web research, document creation, an
                     "llm_call_start",
                     {"step": step, "model": self.model},
                 )
+                self._emit_runtime_event(
+                    "message_started",
+                    step=step,
+                    model=self.model,
+                )
 
                 # Display step header and thinking indicator
                 step_info = StepInfo(
@@ -1150,6 +1157,17 @@ You help users with coding, file operations, web research, document creation, an
                     continue
                 choice = response.choices[0]
                 message = choice.message
+                self._emit_runtime_event(
+                    "message_finished",
+                    step=step,
+                    model=self.model,
+                    finish_reason=getattr(choice, "finish_reason", None),
+                    has_content=bool(getattr(message, "content", None)),
+                    tool_call_ids=[
+                        getattr(tool_call, "id", "unknown")
+                        for tool_call in (getattr(message, "tool_calls", None) or [])
+                    ],
+                )
 
                 # Termination: no tool calls → final response (Ch2: normal completion)
                 if not message.tool_calls:
@@ -1246,15 +1264,16 @@ You help users with coding, file operations, web research, document creation, an
                     else:
                         sequential_calls.append((tc, func_name, func_args))
                     display_args = {k: v for k, v in func_args.items() if k != "_parse_error"}
-                    all_calls_parsed.append((func_name, display_args))
+                    all_calls_parsed.append((tc.id, func_name, display_args))
 
                 print()
                 status_bar = get_status_bar()
-                for i, (func_name, func_args) in enumerate(all_calls_parsed):
+                for i, (tool_call_id, func_name, func_args) in enumerate(all_calls_parsed):
                     self._emit_runtime_event(
                         "tool_started",
                         tool=func_name,
                         arguments=func_args,
+                        tool_call_id=tool_call_id,
                     )
                     print_tool_call_collapsible(
                         func_name, func_args, i, total_tool_calls, collapsed=True
@@ -1263,12 +1282,16 @@ You help users with coding, file operations, web research, document creation, an
 
                 if safe_calls:
                     with ThreadPoolExecutor(max_workers=min(len(safe_calls), 8)) as executor:
-                        futures = [
-                            executor.submit(self._handle_tool_call, fn, fa, tc.id, session)
+                        submitted = [
+                            (
+                                tc,
+                                fn,
+                                executor.submit(self._handle_tool_call, fn, fa, tc.id, session),
+                                time.time(),
+                            )
                             for tc, fn, fa in safe_calls
                         ]
-                        for (tc, func_name, _), future in zip(safe_calls, futures):
-                            tool_start = time.time()
+                        for tc, func_name, future, tool_start in submitted:
                             try:
                                 result = future.result()
                                 duration = time.time() - tool_start
@@ -1277,6 +1300,7 @@ You help users with coding, file operations, web research, document creation, an
                                 self._emit_runtime_event(
                                     "tool_finished" if success else "tool_failed",
                                     tool=func_name,
+                                    tool_call_id=tc.id,
                                     duration_seconds=round(duration, 3),
                                     message=preview or error_msg or "",
                                 )
@@ -1287,6 +1311,7 @@ You help users with coding, file operations, web research, document creation, an
                                 self._emit_runtime_event(
                                     "tool_failed",
                                     tool=func_name,
+                                    tool_call_id=tc.id,
                                     duration_seconds=round(duration, 3),
                                     message=str(e),
                                 )
@@ -1308,6 +1333,7 @@ You help users with coding, file operations, web research, document creation, an
                         self._emit_runtime_event(
                             "tool_finished" if success else "tool_failed",
                             tool=func_name,
+                            tool_call_id=tc.id,
                             duration_seconds=round(duration, 3),
                             message=preview or error_msg or "",
                         )
@@ -1318,6 +1344,7 @@ You help users with coding, file operations, web research, document creation, an
                         self._emit_runtime_event(
                             "tool_failed",
                             tool=func_name,
+                            tool_call_id=tc.id,
                             duration_seconds=round(duration, 3),
                             message=str(e),
                         )

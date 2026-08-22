@@ -1,117 +1,114 @@
 ![Nexgent — Agents in motion](nexgent/assets/brand/nexgent-title.png)
 
-基于 [Agent Learning Hub](https://github.com/datawhalechina/Agent-Learning-Hub) 学习路线完成 Stage 0-8 实践，并在此基础上构建生产级、模型无关的 Agent Harness。Nexgent 现在同时提供原生 PyQt6 桌面 GUI、Textual TUI 与无界面 CLI，三种前端共用同一个 Agent、工具、权限、Session、SubAgent、Workflow 与扩展运行时。
+Nexgent 是面向长周期科研代码与模拟任务的可追踪、自排查、自进化 Coding Harness。
+它让 Agent 在真实仓库中修改代码、配置和模拟参数，同时把执行、故障、恢复与验收证据
+保存为可继续、可检查、可导出的持久 Run。
 
-## 阶段概览
+> A traceable, self-diagnosing and evolving Coding Harness for long-running
+> research code and simulation tasks.
 
-| Stage | 主题 | 交付物 | 关键概念 |
-|-------|------|--------|----------|
-| 0 | 理论基础 | [学习笔记](stage-0/note-why-agent.md) | Agent vs Workflow、ReAct 范式 |
-| 1 | 最小 Agent | [~220 行 Python agent](stage-1/) | Agent Loop、工具选择、安全数学求值 |
-| 2 | RAG 研究助手 | [研究助手 agent](stage-2/) | 三级记忆、RAG 管线、引用 |
-| 3 | Agent Harness | [Harness 演示](stage-3/) | 工具注册、权限门、会话存储 |
-| 4 | 多 Agent 协作 | [多 agent 写作系统](stage-4/) | Supervisor 模式、角色分离、结构化 I/O |
-| 5 | Skill 框架 | [Code Review Skill](stage-5/) | SKILL.md 格式、可复用工作流 |
-| 6 | 浏览器自动化 | [浏览器研究 agent](stage-6/) | Playwright、安全守卫、审计追踪 |
-| 7 | 评估框架 | [评估运行器](stage-7/) | 双层判定、失败分类、回归测试 |
-| 8 | 生产级 DevOps Agent | [DevOps agent](stage-8/) | 可观测性、成本追踪、权限门 |
+## 功能
 
-## Nexgent
-
-基于 Stage 0-8 经验构建的生产级模型无关 Agent Harness，参考 Claude Code 架构，并采用 AutoReport/Manyselves 已验证的紧凑工作区交互方式。
-
-**核心特性**：原生桌面 GUI、Agent Loop、38 个工具、MCP 工具桥接、6 种权限模式、安全管线、上下文管理、记忆系统、Session、Hook、SubAgent、Workflow、多模型配置、插件、Skills、TUI、CLI、自定义 Agent、后台任务、`@file` 引用与 Goal 管理。
-
-详见 [Nexgent 产品文档](nexgent/README.md)、[桌面 GUI 说明](nexgent/docs/desktop-gui.md)和[真实可见验收记录](nexgent/docs/visible-gui-validation.md)。
-
-## 原生桌面 GUI
+- **验证驱动闭环**：以用户提供的测试或模拟验收命令作为唯一成功条件；普通模型回答
+  不会被当作任务完成。
+- **持久追踪**：记录目标、attempt、模型和工具事件、进程、代码/配置变化、产物、
+  依赖边、诊断、恢复和验证结果。
+- **自动排查**：验收失败后，从症状沿控制、数据、产物、资源和因果关系回溯候选根因，
+  将证据与失败输出交给下一次修复。
+- **长周期恢复**：Run 保存在项目的 `.nexgent/runs`；暂停或中断后可由新进程继续同一
+  Run，并使用 lease 防止两个运行时同时接管。
+- **验证约束的经验演化**：成功恢复只有经过独立验收且没有回归才会晋升为可复用策略；
+  复用后失败会降权并可被禁用。
+- **科研运行时**：提供 Typed DAG、精确输入缓存、跨进程恢复、模拟器状态、资源状态和
+  外部副作用遥测接口。
+- **统一工作区**：PyQt6 GUI、Textual TUI 与无界面 CLI 共用同一个 Agent、权限系统、
+  Session、SubAgent、Workflow 和持久 Harness。
 
 ![Nexgent desktop workspace](nexgent/assets/screenshots/main-window.png)
 
-- Files、Sessions、Agents 共用紧凑左侧导航；中栏预览 Markdown、文本、代码和图片；右栏展示统一 Agent 对话与工具活动。
-- `/` 命令与 `@` 文件支持动态候选和 Tab 补全；项目级输入历史支持 `↑`/`↓` 恢复草稿。
-- 运行中可用 `/btw <指导>` 注入上下文，普通输入进入有界队列，Stop 同时停止主/子 Agent 并清除未执行输入。
-- 写入、Plan 和动态问答使用 GUI 原生审批框；SubAgent 与 Workflow Agent 拥有独立可切换对话。
-- 配置保存后立即重载模型；`/clear`、`/quit`、Session save/load/fork 和安全关闭均通过同一运行时完成。
+## 安装
 
-真实 macOS 窗口验收覆盖 25 个功能场景并全部通过；远程模型完成了主 Agent 读取、可见审批、子 Agent `created → running → completed` 和结果回传。详见[完整验收证据](nexgent/docs/visible-gui-validation.md)。
-
-## 快速开始
+要求 Python 3.10+。
 
 ```bash
 git clone https://github.com/csxq0605/Nexgent.git
 cd Nexgent/nexgent
+
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 
-# 配置密钥
 cp .env.example .env
-# 编辑 .env 填入 MIMO_API_KEY 等
-
-# 配置模型（可选，有默认值）
 cp models.json.example models.json
-
-nexgent          # 原生桌面 GUI
-nexgent --tui    # Textual TUI
-nexgent --task "Review this project"  # 无界面 CLI
 ```
 
-交互式运行 `nexgent` 默认启动原生桌面 GUI。管道输入、`--task`、`json` 与 `stream-json` 保持无 Qt 的自动化路径。
+在 `.env` 中填写所使用 Provider 的 API Key，并在 `models.json` 中选择默认模型。
+
+## 启动
+
+```bash
+# 原生桌面 GUI
+nexgent-gui --project /path/to/repository
+
+# 默认交互入口；也可显式使用 TUI
+nexgent
+nexgent --tui
+
+# 单次无界面任务
+nexgent --task "Inspect the repository and explain the failing simulation"
+```
+
+## 运行科研 Coding Loop
+
+在 GUI、TUI 或交互终端中执行：
+
+```text
+/harness run \
+  --check "python simulate.py --verify" \
+  --task "Find and repair the numerical instability" \
+  --attempts 3 \
+  --timeout 120
+```
+
+Nexgent 会重复执行 Agent、独立验收、故障记录、依赖定位和恢复指导。只有验收命令退出码
+为 0，Run 才会进入 `succeeded`；预算耗尽时保持 `paused`，不会伪报成功。
+
+## 管理长周期 Run
+
+```text
+/harness list
+/harness status <run-id>
+/harness resume <run-id> --attempts 3 --timeout 120
+/harness export <run-id>
+```
+
+默认导出到 `.nexgent/exports/<run-id>.jsonl`。可在另一个环境中独立检查：
+
+```bash
+nexgent-verify-run \
+  --jsonl .nexgent/exports/<run-id>.jsonl \
+  --strict-lifecycles
+```
+
+## 当前能力边界
+
+- Nexgent 提供 Harness、追踪协议和恢复闭环；项目效果评估由外部任务体系负责。
+- “自进化”指经过验证的恢复经验晋升、复用、降权和禁用，不表示在线训练基础模型，也不
+  会绕过权限自动重放任意补丁。
+- 通用代码与进程事件会自动记录；领域模拟器内部状态需要通过 `SimulatorAdapter` 接入。
+- 任意未知科研仓库能否修复取决于模型、工具、遥测、验收条件和权限配置。
 
 ## 测试
 
-| 类型 | 数量 |
-|------|------|
-| 单元测试 | 1057+ |
-| E2E 测试 | 73（57 fast + 16 slow） |
-| Stage 测试 | 67 |
-
-2026-07-28 桌面交付复验：可见 GUI 25/25；代码套件 1017 passed、110 skipped；7 个因沙箱网络权限失败的 localhost/外网测试在授权环境重跑为 7/7 passed。
-
 ```bash
-cd nexgent
+cd Nexgent/nexgent
 pip install -e ".[dev]"
-python -m pytest tests/ --ignore=tests/test_e2e.py -v  # 单元测试
-python -m pytest tests/test_e2e.py -v                    # E2E fast
-python -m pytest tests/test_e2e.py -v --run-slow         # E2E fast + slow
-python run_tests.py --all                                 # 全部
+QT_QPA_PLATFORM=offscreen pytest -q
 ```
 
-## CI/CD
-
-GitHub Actions 自动化测试：
-
-- **unit-tests**: push/PR 自动运行，Python 3.10-3.13 矩阵，覆盖率报告上传 Codecov
-- **e2e-fast**: 仅手动触发（`workflow_dispatch` 选择 `fast` 或 `all`）
-- **e2e-full**: 仅手动触发（`workflow_dispatch` 选择 `all`）
-
-## 项目结构
-
-```
-Nexgent/
-├── stage-0/ ~ stage-8/    # 学习阶段交付物
-├── nexgent/               # 生产级 Agent Harness（主要交付物）
-│   ├── nexgent/           # Python 包
-│   │   ├── agent.py       # 核心 Agent Loop
-│   │   ├── cli.py         # REPL + 斜杠命令
-│   │   ├── gui/           # PyQt6 原生桌面工作区
-│   │   ├── runtime/       # GUI/TUI/CLI 共用运行时与事件
-│   │   ├── workflow.py    # 工作流引擎
-│   │   ├── models.py      # 多模型配置
-│   │   ├── plugins.py     # 插件系统
-│   │   ├── mcp.py         # MCP 集成（工具桥接）
-│   │   ├── tui.py         # 全屏 TUI 界面
-│   │   ├── tools/         # 14 个工具模块（38 个工具）
-│   │   ├── resources/     # 打包应用图标
-│   │   └── ...
-│   ├── assets/            # Agent Relay 品牌与 GUI 截图
-│   ├── docs/              # GUI、品牌与验收文档
-│   ├── tests/             # 单元 + E2E 测试
-│   ├── models.json.example  # 模型配置模板
-│   └── setup.py
-├── tests/                 # Stage 级别测试
-└── .github/workflows/     # CI/CD
-```
+完整使用说明见 [Harness README](nexgent/README.md)，桌面操作见
+[Desktop GUI](nexgent/docs/desktop-gui.md)。
 
 ## License
 
-MIT License
+[MIT](LICENSE)
