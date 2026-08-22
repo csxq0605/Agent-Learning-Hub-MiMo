@@ -45,6 +45,7 @@ class FakeRuntime:
         self.interaction_broker = InteractionBroker()
         self.commands = FakeCommands(self.session)
         self.checkpoint_manager = None
+        self.run_store = None
         self.event_sink = None
         self.closed = False
 

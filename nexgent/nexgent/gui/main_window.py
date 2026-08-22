@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from pathlib import Path
 
 from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QListWidget, QMainWindow, QMessageBox,
-    QSplitter, QStatusBar, QTabWidget, QVBoxLayout, QWidget, QInputDialog,
+    QFrame, QFileDialog, QHBoxLayout, QLabel, QListWidget, QMainWindow,
+    QMessageBox, QSplitter, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
+    QInputDialog,
 )
 
 from ..context import CheckpointManager, Session
@@ -23,6 +25,11 @@ from .runtime_bridge import RuntimeBridge
 from .theme import theme_stylesheet
 from .widgets.agent_panel import AgentPanel
 from .widgets.file_tree import ProjectFileTree
+from .widgets.harness_runs import (
+    HarnessResumeDialog,
+    HarnessRunDialog,
+    HarnessRunsPanel,
+)
 from .widgets.preview import PreviewPane
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -33,6 +40,7 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.runtime = runtime
         self.project_root = runtime.project_root
+        self._native_input_labels: dict[str, list[str]] = {}
         self.bridge = RuntimeBridge(runtime, self)
         self.settings = QSettings("Nexgent", "Desktop")
         self.setWindowTitle(f"{PRODUCT_NAME} — {self.project_root.name}")
@@ -44,6 +52,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_runtime()
         self._refresh_sessions()
+        self._refresh_harness_runs()
         self._agent_items = {"main": self.agent_list.item(0)}
         geometry = self.settings.value("geometry")
         if geometry:
@@ -134,6 +143,14 @@ class MainWindow(QMainWindow):
         sessions_layout.addWidget(self.sessions)
         self.navigation_tabs.addTab(sessions_page, "Sessions")
 
+        self.harness_runs = HarnessRunsPanel()
+        self.harness_runs.new_requested.connect(self._new_harness_run)
+        self.harness_runs.details_requested.connect(self._show_harness_run_details)
+        self.harness_runs.resume_requested.connect(self._resume_harness_run)
+        self.harness_runs.export_requested.connect(self._export_harness_run)
+        self.harness_runs.refresh_requested.connect(self._refresh_harness_runs)
+        self.navigation_tabs.addTab(self.harness_runs, "Runs")
+
         agents_page = QWidget()
         agents_layout = QVBoxLayout(agents_page)
         agents_layout.setContentsMargins(2, 4, 2, 2)
@@ -163,7 +180,7 @@ class MainWindow(QMainWindow):
         columns.addWidget(self.navigator)
         columns.addWidget(self.preview_panel)
         columns.addWidget(self.agent)
-        columns.setSizes([245, 520, 715])
+        columns.setSizes([300, 500, 680])
         columns.setStretchFactor(1, 2)
         columns.setStretchFactor(2, 3)
         outer.addWidget(columns, 1)
@@ -171,7 +188,7 @@ class MainWindow(QMainWindow):
         status = QStatusBar()
         self.status_model = QLabel(self.runtime.harness.model)
         self.status_session = QLabel(f"Session {self.runtime.session.session_id}")
-        status.addWidget(self.status_session)
+        status.addPermanentWidget(self.status_session)
         status.addPermanentWidget(self.status_model)
         self.setStatusBar(status)
 
@@ -227,7 +244,11 @@ class MainWindow(QMainWindow):
         self._active_input = text
         self._ensure_agent_item("main", "running")
         self.agent.select_agent("main")
-        self.agent.add_message("You", text, "main")
+        labels = self._native_input_labels.get(text, [])
+        display_text = labels.pop(0) if labels else text
+        if not labels:
+            self._native_input_labels.pop(text, None)
+        self.agent.add_message("You", display_text, "main")
 
     def _runtime_event(self, event):
         if event.kind == RuntimeEventKind.MESSAGE_DELTA:
@@ -270,6 +291,7 @@ class MainWindow(QMainWindow):
             if reason:
                 message += f"\n{reason}"
             self.agent.add_message("Nexgent", message, "main")
+            self._refresh_harness_runs()
         elif event.kind in {
             RuntimeEventKind.TOOL_STARTED,
             RuntimeEventKind.TOOL_FINISHED,
@@ -322,8 +344,22 @@ class MainWindow(QMainWindow):
         else:
             self.agent.restore_submission(text)
 
+    def _submit_native_command(self, command: str, display_text: str) -> None:
+        labels = self._native_input_labels.setdefault(command, [])
+        labels.append(display_text)
+        if self.bridge.submit(command):
+            self.statusBar().showMessage("Running…")
+            return
+        labels.pop()
+        if not labels:
+            self._native_input_labels.pop(command, None)
+
     def _input_queued(self, text, position):
-        self.agent.add_message("System", f"Queued #{position}: {text}", "main")
+        labels = self._native_input_labels.get(text, [])
+        display_text = labels[-1] if labels else text
+        self.agent.add_message(
+            "System", f"Queued #{position}: {display_text}", "main"
+        )
         self.statusBar().showMessage(f"Queued #{position}", 2500)
 
     def _guidance_injected(self, text):
@@ -335,6 +371,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(reason, 4000)
 
     def _queue_cleared(self, count):
+        self._native_input_labels.clear()
         self.agent.add_message(
             "System", f"Stopped current run and cleared {count} queued input(s).", "main"
         )
@@ -351,6 +388,8 @@ class MainWindow(QMainWindow):
             self._refresh_sessions()
         if command == "/model":
             self.status_model.setText(self.runtime.harness.model)
+        if command == "/harness":
+            self._refresh_harness_runs()
 
     def _run_finished(self, result):
         active_input = getattr(self, "_active_input", "")
@@ -359,12 +398,14 @@ class MainWindow(QMainWindow):
         self._ensure_agent_item("main", "ready")
         self.statusBar().showMessage("Ready", 2500)
         self._refresh_sessions()
+        self._refresh_harness_runs()
 
     def _run_failed(self, error):
         self.agent.add_message("Error", error, "main")
         self._ensure_agent_item("main", "failed")
         self.statusBar().showMessage("Run failed", 5000)
         self._refresh_sessions()
+        self._refresh_harness_runs()
 
     def _resolve_interaction(self, request):
         if request.kind.value == "user_input":
@@ -438,6 +479,105 @@ class MainWindow(QMainWindow):
         files = sorted(self.runtime.session_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
         for path in files[:50]:
             self.sessions.addItem(path.stem)
+
+    def _refresh_harness_runs(self):
+        store = getattr(self.runtime, "run_store", None)
+        if store is None:
+            self.harness_runs.set_runs(())
+            return
+        try:
+            runs = [
+                run
+                for run in store.list_runs()
+                if getattr(run.mode, "value", run.mode) == "coding"
+            ]
+        except Exception as exc:
+            self.statusBar().showMessage(f"Cannot load Runs: {exc}", 4000)
+            return
+        self.harness_runs.set_runs(runs)
+
+    def _new_harness_run(self):
+        request = HarnessRunDialog.get_request(self)
+        if request is None:
+            return
+        command = (
+            f"/harness run --check {shlex.quote(request.check_command)} "
+            f"--task {shlex.quote(request.task)} "
+            f"--attempts {request.attempts} --timeout {request.timeout_seconds}"
+        )
+        self.navigation_tabs.setCurrentWidget(self.harness_runs)
+        self._submit_native_command(
+            command,
+            f"Start verified Run\nTask: {request.task}\n"
+            f"Acceptance: {request.check_command}",
+        )
+
+    def _resume_harness_run(self, run_id: str):
+        request = HarnessResumeDialog.get_request(self)
+        if request is None:
+            return
+        self._submit_native_command(
+            f"/harness resume {shlex.quote(run_id)} "
+            f"--attempts {request.attempts} --timeout {request.timeout_seconds}",
+            f"Resume verified Run\nRun ID: {run_id}",
+        )
+
+    def _export_harness_run(self, run_id: str):
+        default = self.project_root / ".nexgent" / "exports" / f"{run_id}.jsonl"
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export verified Run evidence",
+            str(default),
+            "JSON Lines (*.jsonl);;All files (*)",
+        )
+        if not destination:
+            return
+        self._submit_native_command(
+            f"/harness export {shlex.quote(run_id)} "
+            f"--output {shlex.quote(destination)}",
+            f"Export Run evidence\nRun ID: {run_id}\nDestination: {destination}",
+        )
+
+    def _show_harness_run_details(self, run_id: str):
+        store = getattr(self.runtime, "run_store", None)
+        if store is None:
+            return
+        try:
+            bundle = store.export_run(run_id)
+        except Exception as exc:
+            QMessageBox.warning(self, "Cannot inspect Run", str(exc))
+            return
+        run = bundle["run"]
+        verification = bundle["verifications"][-1] if bundle["verifications"] else None
+        changed_files = sorted(
+            {
+                str(event["payload"]["path"])
+                for event in bundle["events"]
+                if event.get("payload", {}).get("stage") == "workspace-change"
+                and event.get("payload", {}).get("path")
+            }
+        )
+        lines = [
+            "Harness Run",
+            "===========",
+            f"Run ID: {run_id}",
+            f"Status: {run['status']}",
+            f"Objective: {run['objective']}",
+            f"Attempts: {len(bundle['attempts'])}",
+            f"Fault observations: {len(bundle['faults'])}",
+            f"Diagnoses: {len(bundle['diagnoses'])}",
+            f"Recoveries: {len(bundle['recoveries'])}",
+            f"Verification: {(verification or {}).get('decision', 'not available')}",
+            "",
+            "Changed files:",
+            *(f"- {path}" for path in changed_files),
+        ]
+        if run.get("termination_reason"):
+            lines.extend(("", f"Termination: {run['termination_reason']}"))
+        self.preview.text.setPlainText("\n".join(lines))
+        self.preview.setCurrentWidget(self.preview.text)
+        self.preview_panel.setVisible(True)
+        self.statusBar().showMessage(f"Inspecting {run_id}", 3000)
 
     def _resume_session(self, item):
         path = self.runtime.session_dir / f"{item.text()}.jsonl"

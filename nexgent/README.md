@@ -23,41 +23,38 @@ cp models.json.example models.json
 在 `.env` 中填写 Provider 密钥。`models.json` 使用 `provider/model` 标识，并分别配置
 主 Agent、SubAgent 和快速任务的默认模型。
 
-## 前端
+## GUI 快速开始
 
 ```bash
-# PyQt6 桌面工作区
 nexgent-gui --project /path/to/repository
-
-# 交互入口和 Textual TUI
-nexgent
-nexgent --tui
-
-# 单次 CLI；适合脚本或 CI
-nexgent --task "Inspect the failed solver run" --output-format json
 ```
+
+1. 通过 **File → Model & Provider Settings…** 配置模型；
+2. 打开左侧 **Runs** 页面并点击 **New Run**；
+3. 填写 Task、Acceptance command、Maximum attempts 和 Check timeout；
+4. 点击 **Start Run**，在 Conversation 中查看执行、诊断、恢复与验收；
+5. 在 Runs 中使用 **Details、Resume、Export、Refresh** 管理持久任务。
+
+Files、Sessions、Runs 与 Agents 都是可点击页面。写入、Shell、导出等受控操作使用 GUI
+确认框，不要求返回终端处理。
+
+![Nexgent Runs workspace](assets/screenshots/main-window.png)
 
 三种前端共享 Agent、工具注册表、权限、Session、SubAgent、Workflow、MCP、Skills、
 上下文管理和 `.nexgent/runs` 持久状态。CLI 与管道模式不会导入 Qt。
 
 ## Verified Coding Harness
 
-### 启动闭环
+### GUI 启动闭环
+
+在 **New Run** 表单中把科研代码或模拟修复目标填写到 Task，把测试、模拟不变量或产物检查
+填写到 Acceptance command。只有验收命令退出码为 0，Run 才会变成 `SUCCEEDED`。
+
+例如模拟任务可填写：
 
 ```text
-/harness run \
-  --check "python -m pytest -q" \
-  --task "Repair the failing solver tests" \
-  --attempts 3 \
-  --timeout 120
-```
-
-模拟任务可以直接把领域验收作为完成条件：
-
-```text
-/harness run \
-  --check "python simulate.py --case case.yaml --verify" \
-  --task "Diagnose the unstable timestep and produce a verified result"
+Task: Diagnose the unstable timestep and produce a verified result
+Acceptance command: python simulate.py --case case.yaml --verify
 ```
 
 每次 attempt 都会：
@@ -84,9 +81,19 @@ Provider；输出会给出可继续检查的临时工作区、Run ID 与导出�
 需要真实 Provider 的 Skills、SubAgent 与 Workflow 交互展示，见
 [demo-project](demo-project/README.md)；该目录是功能沙箱，不作为 Harness 闭环证据。
 
-### 查询、继续和导出
+### GUI 查询、继续和导出
+
+Runs 页面按最近时间列出持久 Run：
+
+- **Details**：在 Preview 中查看状态、目标、attempt、故障、诊断、恢复、验证和变更文件；
+- **Resume**：为 `PAUSED` Run 增加 attempt 与 timeout 后继续同一 Run；
+- **Export**：选择保存位置并导出脱敏 JSONL；
+- **Refresh**：重新读取项目的 Run Store。
+
+### 自动化命令（可选）
 
 ```text
+/harness run --check "python -m pytest -q" --task "Repair the failing tests"
 /harness list
 /harness status <run-id>
 /harness resume <run-id> --attempts 3 --timeout 120

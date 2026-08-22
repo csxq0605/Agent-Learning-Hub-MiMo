@@ -24,8 +24,6 @@ Nexgent 是面向长周期科研代码与模拟任务的可追踪、自排查、
 - **统一工作区**：PyQt6 GUI、Textual TUI 与无界面 CLI 共用同一个 Agent、权限系统、
   Session、SubAgent、Workflow 和持久 Harness。
 
-![Nexgent desktop workspace](nexgent/assets/screenshots/main-window.png)
-
 ## 安装
 
 要求 Python 3.10+。
@@ -44,31 +42,31 @@ cp models.json.example models.json
 
 在 `.env` 中填写所使用 Provider 的 API Key，并在 `models.json` 中选择默认模型。
 
-## 启动
+## GUI 快速开始
 
 ```bash
-# 原生桌面 GUI
 nexgent-gui --project /path/to/repository
-
-# 默认交互入口；也可显式使用 TUI
-nexgent
-nexgent --tui
-
-# 单次无界面任务
-nexgent --task "Inspect the repository and explain the failing simulation"
 ```
 
-## 运行科研 Coding Loop
+启动后全部核心操作都可以在桌面界面完成：
 
-在 GUI、TUI 或交互终端中执行：
+1. 在 **File → Model & Provider Settings…** 配置模型与 Provider；
+2. 在左侧打开 **Runs**，点击 **New Run**；
+3. 填写科研代码或模拟修复目标、独立验收命令、最大尝试次数和超时；
+4. 点击 **Start Run**，在 Conversation 中查看执行、验收、故障定位和恢复进度；
+5. 选中历史 Run，使用 **Details、Resume、Export** 检查证据、继续任务或导出 JSONL。
 
-```text
-/harness run \
-  --check "python simulate.py --verify" \
-  --task "Find and repair the numerical instability" \
-  --attempts 3 \
-  --timeout 120
-```
+Files 用于浏览和预览项目，Sessions 用于恢复对话，Agents 用于切换主 Agent 与
+SubAgent。运行中的写入和执行授权也会在 GUI 中弹窗确认。
+
+![Nexgent Runs workspace](nexgent/assets/screenshots/main-window.png)
+
+## GUI 中的科研 Coding Loop
+
+**New Run** 表单中的 Acceptance command 是唯一成功条件。例如填写
+`python simulate.py --verify`，只有该命令退出码为 0，Run 才会显示为 `SUCCEEDED`。
+模型文本不会被当作任务完成；预算耗尽时 Run 保持 `PAUSED`，可以在 Runs 页面选中后点击
+**Resume** 增加有界预算并继续同一证据链。
 
 Nexgent 会重复执行 Agent、独立验收、故障记录、依赖定位和恢复指导。只有验收命令退出码
 为 0，Run 才会进入 `succeeded`；预算耗尽时保持 `paused`，不会伪报成功。
@@ -90,22 +88,10 @@ Run ID 和导出文件路径。
 需要真实 Provider 的 Skills、SubAgent 与 Workflow 交互展示，见
 [demo-project](nexgent/demo-project/README.md)；它是功能沙箱，不作为 Harness 闭环证据。
 
-## 管理长周期 Run
+## 自动化入口（可选）
 
-```text
-/harness list
-/harness status <run-id>
-/harness resume <run-id> --attempts 3 --timeout 120
-/harness export <run-id>
-```
-
-默认导出到 `.nexgent/exports/<run-id>.jsonl`。可在另一个环境中独立检查：
-
-```bash
-nexgent-verify-run \
-  --jsonl .nexgent/exports/<run-id>.jsonl \
-  --strict-lifecycles
-```
+TUI、无界面任务和 CI 入口仍然保留，并与 GUI 共享运行时和 Run Store；自动化命令及独立
+证据校验方式见 [Harness README](nexgent/README.md)。日常交互不需要输入这些命令。
 
 ## 当前能力边界
 

@@ -8,11 +8,23 @@
 | --- | --- |
 | Files | 项目文件浏览、`@file` 候选来源、文本/代码/Markdown/图片预览 |
 | Sessions | JSONL 自动保存、恢复、分叉、保存与加载 |
+| Runs | GUI 表单创建 verified Run、查看证据、继续暂停任务、导出 JSONL |
 | Agents | 主 Agent 与每个 SubAgent 的生命周期、任务和独立对话结果 |
 | Conversation | 主 Agent 运行、模型/权限切换、工具活动、停止、写入确认 |
 | Composer | `/` 命令与 `@` 文件动态候选、Tab 补全、项目级输入历史、运行中指导与排队 |
 
-GUI 不再为每个命令维护按钮矩阵。`nexgent.commands.SLASH_COMMANDS` 是 `/` 候选的唯一来源，`scan_completions()` 同时服务 GUI 与终端的 `@` 文件候选。命令继续由 `CommandService` 调用原有 `_handle_command`；普通消息、`@` 引用和 `!` Shell 继续由 `NexgentRuntime` 路由到同一个 `NexgentAgent` 与 `PermissionGate`。
+Runs 为 Coding Harness 的核心生命周期提供原生按钮和表单；其他高级命令不维护重复按钮
+矩阵。`nexgent.commands.SLASH_COMMANDS` 仍是 Composer 中 `/` 候选的唯一来源，
+`scan_completions()` 同时服务 GUI 与终端的 `@` 文件候选。GUI 表单在内部通过同一个
+`CommandService` 和 `NexgentRuntime` 调用正式 Harness，不存在第二套简化运行时。
+
+## GUI 运行 Harness
+
+1. 打开 Runs，点击 New Run；
+2. 填写任务与独立验收命令，设置 attempt 和 timeout；
+3. 点击 Start Run，在 Conversation 中查看实时阶段和权限请求；
+4. 选中 Run，点击 Details 查看证据摘要；
+5. PAUSED Run 可点击 Resume；任意 Run 可通过 Export 选择 JSONL 保存位置。
 
 运行期间 Composer 保持可输入。`/btw` 通过线程安全 Session 注入当前上下文，普通输入进入有界 FIFO 队列；Stop 会清除尚未执行的队列项，并在对话中明确显示清除数量。SubAgent 创建、运行、完成、失败和取消都会发出 `SUBAGENT_CHANGED`，GUI据此创建可切换的 Agent 记录；隔离子会话保存在 `.nexgent/sessions/agents/`。子 Agent 与 Workflow Agent 继承父运行时的 `InteractionBroker` 和事件回调，所以写入确认、工具活动、状态与结果都回到同一个 GUI，而不是落回终端或静默执行。
 
