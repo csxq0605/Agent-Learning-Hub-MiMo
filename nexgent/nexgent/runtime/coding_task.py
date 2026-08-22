@@ -523,8 +523,13 @@ class CodingTaskLoop:
         assert self.context is not None
         signature = self._strategy_signature()
         strategy = self.store.select_recovery_strategy(signature)
-        self.strategy_reused = strategy is not None
-        self.selected_strategy_id = strategy.strategy_id if strategy else None
+        # These fields summarize the whole Run.  A later recovery proposal may
+        # have a different signature; it must not erase an earlier, real reuse
+        # or prevent that reused strategy from being down-ranked if the Run
+        # eventually fails.
+        if strategy is not None:
+            self.strategy_reused = True
+            self.selected_strategy_id = strategy.strategy_id
         action = RecoveryAction(
             recovery_id=new_id("recovery"),
             run_id=self.context.run_id,

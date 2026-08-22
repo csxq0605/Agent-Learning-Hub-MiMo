@@ -4,9 +4,9 @@ Usage from ``nexgent/demo-project``::
 
     nexgent> /workflow run examples/workflow-full-review.py
 
-This is a generic Harness demonstration. It does not claim dependency-aware
-root-cause localization or scientific verification; those are tracked in the
-research roadmap.
+This is a Provider-backed workspace orchestration demonstration.  It does not
+replace the offline, independently verified Coding Harness recovery demo in
+``../examples/harness_fault_recovery_demo.py``.
 """
 
 
@@ -80,5 +80,5 @@ async def main(ctx, args):
         "diagnosis": diagnosis,
         "repair": repair,
         "verification": verification,
-        "verified_by_research_controller": False,
+        "verified_by_coding_harness": False,
     }

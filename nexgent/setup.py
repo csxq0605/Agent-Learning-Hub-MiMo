@@ -31,6 +31,13 @@ setup(
             "pytest-cov>=4.0.0",
             "pytest-qt>=4.5.0,<5.0.0",
         ],
+        "demo": [
+            "bcrypt>=4.0.0",
+            "email-validator>=2.0.0",
+            "fastapi>=0.100.0",
+            "PyJWT>=2.8.0",
+            "SQLAlchemy>=2.0.0",
+        ],
     },
     entry_points={
         "console_scripts": [

@@ -81,6 +81,9 @@ python examples/harness_fault_recovery_demo.py
 依赖归因、恢复指导、第二次修复、成功验收、JSONL 导出及独立完整性校验。它不会调用
 Provider；输出会给出可继续检查的临时工作区、Run ID 与导出路径。
 
+需要真实 Provider 的 Skills、SubAgent 与 Workflow 交互展示，见
+[demo-project](demo-project/README.md)；该目录是功能沙箱，不作为 Harness 闭环证据。
+
 ### 查询、继续和导出
 
 ```text

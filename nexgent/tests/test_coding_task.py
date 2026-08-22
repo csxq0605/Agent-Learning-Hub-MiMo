@@ -166,10 +166,21 @@ def test_reused_strategy_is_downranked_after_real_harness_failure(tmp_path):
     assert promoted.status.value == "succeeded"
     strategy = store.list_recovery_strategies()[0]
 
+    failing_calls = 0
+
     def failing_agent(_prompt):
+        nonlocal failing_calls
+        failing_calls += 1
         (project / "app.py").write_text(
             "def value():\n    return 1\n", encoding="utf-8"
         )
+        if failing_calls > 1:
+            # Force the later proposal onto a different feature signature.  A
+            # Run-level reuse result must remain true and retain the strategy
+            # selected on the first recovery.
+            (project / "diagnostic.yaml").write_text(
+                "second_failure: true\n", encoding="utf-8"
+            )
         return "still wrong"
 
     failed = run_coding_task(

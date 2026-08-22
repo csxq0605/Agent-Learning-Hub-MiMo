@@ -87,6 +87,9 @@ Demo 使用脚本化 Agent 故意写入错误的模拟容差，然后通过正�
 用于复现运行闭环，而不是替代对真实 Provider 能力的测试。命令最后会打印保留的临时工作区、
 Run ID 和导出文件路径。
 
+需要真实 Provider 的 Skills、SubAgent 与 Workflow 交互展示，见
+[demo-project](nexgent/demo-project/README.md)；它是功能沙箱，不作为 Harness 闭环证据。
+
 ## 管理长周期 Run
 
 ```text

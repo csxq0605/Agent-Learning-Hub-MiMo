@@ -1,11 +1,17 @@
-# Demo — Nexgent Feature Showcase
+# Provider 驱动的交互式功能沙箱
 
-一个 FastAPI 认证服务。用 Nexgent 来审查代码、修复问题、实现功能。
+`demo-project` 是一套带预置缺陷与 TODO 的 FastAPI 认证仓库，用于交互展示 Nexgent 的
+Skills、工具、并行 SubAgent、Workflow、记忆、规则和普通目标执行。它需要配置 Provider，
+不是验证持久故障闭环的离线 Demo。
+
+无需 API Key 的正式 Harness 闭环演示位于
+`../examples/harness_fault_recovery_demo.py`。
 
 ## 快速开始
 
 ```bash
-cd nexgent && pip install -e .
+cd Nexgent/nexgent
+pip install -e ".[demo]"
 cd demo-project
 nexgent
 ```
@@ -53,5 +59,5 @@ tests/
 ## 运行测试
 
 ```bash
-python -m pytest demo-project/tests/ -v
+python -m pytest tests/ -v
 ```
