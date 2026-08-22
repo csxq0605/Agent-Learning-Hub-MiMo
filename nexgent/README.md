@@ -71,6 +71,16 @@ nexgent --task "Inspect the failed solver run" --output-format json
 验收命令仍经过权限系统。`--attempts` 限制 attempt 数，`--timeout` 限制每次验收命令；
 预算耗尽会得到 `paused`，普通 Agent 回复只会得到 `completed_unverified`。
 
+### 无需 API Key 的运行 Demo
+
+```bash
+python examples/harness_fault_recovery_demo.py
+```
+
+该 Demo 使用脚本化 Agent 和正式 `CodingTaskLoop`，依次展示模拟参数故障、独立验收失败、
+依赖归因、恢复指导、第二次修复、成功验收、JSONL 导出及独立完整性校验。它不会调用
+Provider；输出会给出可继续检查的临时工作区、Run ID 与导出路径。
+
 ### 查询、继续和导出
 
 ```text

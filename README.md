@@ -73,6 +73,20 @@ nexgent --task "Inspect the repository and explain the failing simulation"
 Nexgent 会重复执行 Agent、独立验收、故障记录、依赖定位和恢复指导。只有验收命令退出码
 为 0，Run 才会进入 `succeeded`；预算耗尽时保持 `paused`，不会伪报成功。
 
+## 无需 API Key 的运行 Demo
+
+安装后运行：
+
+```bash
+cd Nexgent/nexgent
+python examples/harness_fault_recovery_demo.py
+```
+
+Demo 使用脚本化 Agent 故意写入错误的模拟容差，然后通过正式 Harness 运行时完成验收失败、
+依赖归因、恢复指导、重新修复、成功验收、JSONL 导出和独立完整性校验。它不调用模型，
+用于复现运行闭环，而不是替代对真实 Provider 能力的测试。命令最后会打印保留的临时工作区、
+Run ID 和导出文件路径。
+
 ## 管理长周期 Run
 
 ```text
