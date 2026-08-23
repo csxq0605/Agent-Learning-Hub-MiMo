@@ -159,7 +159,8 @@ pip install -e ".[dev]"
 QT_QPA_PLATFORM=offscreen pytest -q
 ```
 
-桌面端说明见 [docs/desktop-gui.md](docs/desktop-gui.md)。
+桌面端说明见 [docs/desktop-gui.md](docs/desktop-gui.md)。下一阶段的能力内化、科研创新问题、
+实验基线和待办事项见 [docs/research-agent-roadmap.md](docs/research-agent-roadmap.md)。
 
 ## License
 
