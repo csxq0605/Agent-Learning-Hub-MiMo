@@ -5,66 +5,149 @@
 Nexgent 当前定位是面向长周期科研代码与模拟任务的持久、可追踪、验证驱动 Coding
 Harness。下一阶段分成两条相互配合但必须明确区分的路线：
 
-1. **能力内化**：把多智能体组织、文献研究和代码库建模变成 Harness 的一等能力；
+1. **能力内化**：补齐能力契约、恢复一致性、科学证据、实验档案、可失效记忆、多智能体
+   组织、文献研究和代码库建模，使它们成为 Harness 的一等能力；
 2. **研究创新**：围绕科研过程的搜索饱和、结论失效和恢复动作可执行性，提出新的运行时
    定义、控制机制和可复现实验。
 
-多智能体、文献检索或代码扫描本身不作为主要研究贡献。它们是实施科研过程控制的能力
-底座。
+这些底座能力本身不作为主要研究贡献；它们共同服务于科研制度控制、结论有效性管理和
+受状态约束的恢复。
 
-## A. 能力内化
+## A. P0：核心使能能力与现有实现差距
 
-### A1. ResearchTeam：一等多智能体组织
+本节不是另一组平行的研究题目，而是 P1–P3 共同依赖的科研运行时。原则是：**认真实现、
+单独验收、进入消融，但不把已有通用能力本身包装成主要创新。**
 
-目标是把 lead / manager / worker 的层级组织直接内化到持久 `ResearchRun`，而不是维护
-一套与 Run、Workflow 和证据链分离的任务系统。
+### A0. 当前实现审计
 
-- [ ] 定义 `ResearchTeam`、成员角色、父子关系、能力集合与资源预算；
-- [ ] 让 Team Lead 对完整 `ResearchRun` 负责；
-- [ ] 让 Manager 管理子 DAG、研究分支及其局部预算；
-- [ ] 让 Worker 执行具体 `WorkflowNode`，并把输出记录为 `ArtifactRecord`；
-- [ ] 将 team task 和 dependency 映射到现有 Typed DAG；
-- [ ] 将消息、委派、交接和决策记录为有序 Run Event；
-- [ ] 保留 subordinate request、inbox 和两阶段 shutdown，避免提前关闭仍有依赖的成员；
-- [ ] 支持不同分支使用不同模型、上下文、工具和文献视野，为认知多样性提供机制基础；
-- [ ] 所有 Agent 写入、Shell、作业提交和外部副作用继续经过统一权限与审计管线。
+Nexgent 已经具备可复用的骨架，但若要支撑科研智能体研究，若干“字段存在”和“运行时语义
+成立”之间的缺口必须先补齐：
 
-验收条件：中断进程后，新运行时可以恢复同一个团队、任务依赖、成员状态、预算和证据链；
-任何团队产出都可以追溯到对应 Run、WorkflowNode、输入证据和执行者。
+| 现有基础 | 当前缺口 | P0 收敛目标 |
+| --- | --- | --- |
+| `SubAgent` 已支持隔离会话、步骤/时长限制、工具过滤、并行与 pipeline；bare 模式跳过项目记忆，活跃 Run 中的事件可被记录 | 累计 token/cost 预算并非执行期硬约束；team task、handoff 和成员关系仍是进程内状态 | 所有团队实体、硬预算、任务和产物进入持久 Run/DAG/Event Log |
+| `ToolRegistry` 与 `PluginManager` 已能注册、发现工具 | 同名工具可静默覆盖；模型侧会看到全部已注册 Schema；插件安装/卸载未形成确定性的活跃注册表刷新 | 稳定 ABI、冲突拒绝、生命周期刷新和按节点动态 shortlist |
+| 已有 `CheckpointManager`、`max_retries`、`checkpoint_id` 与 recovery contracts | 检查点主要是文件快照；retry/checkpoint 字段尚未贯通持久执行器；rollback 没有统一恢复 Agent、DAG、环境和副作用 | aligned checkpoint、effect-safe retry 和可验证恢复 |
+| 已有 `ExperimentRun`、`WorkflowNode`、`DependencyEdge`、`ArtifactRecord`、`RecoveryAction` 等持久契约 | 已有执行、因果、恢复和验证边，但引用端仍是通用字符串；缺少一等 Claim/Evidence/Environment 节点及 `supports`、`contradicts`、`valid_under`、`supersedes` 等认识论语义 | 类型化 Claim/Evidence/Artifact/Validator 图 |
+| `MemoryStore` 已提供带粗粒度类型元数据的文件记忆；`RecoveryStrategy` 已有窄域的证据晋升和失败降权 | 一般记忆仍缺少 provenance、scope、版本、自动检索和上游撤销；恢复策略不能替代通用科研记忆层 | provenance-backed、scoped、versioned、invalidatable memory |
+| `SQLiteRunStore` 已持久记录运行、失败证据、诊断、恢复和验证结果 | 缺少统一 objective-metric 契约、候选晋升策略、Champion/Pareto/DiverseChallengers 和结构化可查询的 NegativeArchive | 在现有 store 上构建 `ExperimentLedger` 视图与独立 `CandidatePolicy` |
 
-### A2. LiteratureEvidenceProvider：持久文献证据层
+### A1. Capability ABI 与动态能力面
 
-文献能力不应停留在“搜索并总结论文”，而应向假设生成、反证和结论验证提供结构化、可
-撤销的科研证据。
+目标不是把更多插件直接暴露给模型，而是建立可复现、可审计、可按需激活的能力契约。
+
+- [ ] 统一能力命名空间、版本、输入输出 Schema、错误语义、权限和健康检查；
+- [ ] 为每项能力声明前置条件、effect class、成本、延迟、信任级别、资源要求和产物类型；
+- [ ] 注册时确定性拒绝同名或不兼容能力，禁止因仓库尾名或短名称静默覆盖；
+- [ ] install / load / unload 后原子刷新活跃 registry，并锁定历史 Run 所用版本；
+- [ ] 所有能力通过最小 conformance suite 后才可调度；
+- [ ] registry 保存完整能力集合，模型每个 `WorkflowNode` 只看到按 goal、role、state、trust
+  和 regime 生成的动态 shortlist；
+- [ ] 低置信度时允许扩大 shortlist；“能力缺口诊断”和自动发现仅作为 Experimental 路径。
+
+验收指标：冲突拒绝率、版本重放成功率、tool retrieval recall、模型选择准确率、执行成功率、
+上下文节省和未授权副作用数。
+
+### A2. Event Log、对齐检查点与 effect-safe retry
+
+checkpoint 不能只恢复聊天记录或工作区文件，而要形成科研执行状态的一致性协议。
+
+- [ ] 同步保存 Agent/session、controller、ResearchRun、DAG 游标、artifact digest、环境/进程/
+  模拟器状态、资源租约、已提交/未提交副作用以及 capability/model/version manifest；
+- [ ] 在 node commit、外部副作用前后、验证完成和 branch fork 建立语义检查点；
+- [ ] 将动作显式划分为 `PURE`、`IDEMPOTENT`、`REVERSIBLE`、`IRREVERSIBLE`；
+- [ ] timeout 后先执行 postcondition verification，再决定 retry；
+- [ ] 可重试调用必须使用 idempotency key，并设置次数、预算和重复失败守卫；
+- [ ] 可逆动作提供 rollback，不可逆动作只能 compensation、reconciliation 或人工审批；
+- [ ] 支持从 checkpoint fork 新分支，并与依赖图结合选择性 replay。
+
+验收条件：在多组 crash-point fault injection 下，恢复后的 Run、DAG、artifact 和环境摘要一致，
+不存在重复外部副作用、孤儿租约和无限重试。
+
+### A3. 类型化 Claim/Evidence 基础图
+
+图本身是 P2 的数据平面；P2 的创新是赋予它主动失效与选择性重验证的运行时语义。
+
+- [ ] 一等区分 `Claim`、`Evidence`、`Artifact`、`Validator`、`Environment`、`Code` 和 `Data`；
+- [ ] 定义 `supports`、`contradicts`、`derived_from`、`valid_under`、`produced_by` 等具体边；
+- [ ] `VALIDATED` claim 必须绑定 validator，并拥有闭合、可追踪的上游依赖；
+- [ ] 允许矛盾证据、循环和多版本并存，不能把“已记录”误判为“为真”；
+- [ ] 支持 validity envelope、内容摘要、分支血缘、validator 独立性和局部物化视图；
+- [ ] 置信传播、因果边或概率关系在完成校准实验前不得进入核心控制路径。
+
+验收指标：Schema 完整性、依赖闭包率、注入变化下的边定位 precision/recall、存储和查询开销。
+
+### A4. ExperimentLedger 与 CandidatePolicy
+
+保留 best-so-far 是安全底线；only-best-survives 会把长期研究退化成贪心 hill climbing。
+
+- [ ] 永久记录所有实验，包括负结果、失败原因、约束、代码/数据/环境版本、成本、资源、
+  适用 regime、验证状态和 objective metrics；
+- [ ] 用独立 `CandidatePolicy` 管理 `Champion`、`ParetoArchive`、`DiverseChallengers` 和
+  `NegativeArchive`，不删除未晋升实验；
+- [ ] evaluator 与指标版本在看到结果前固定，目标改变时创建新评价版本而非改写历史；
+- [ ] 候选须经独立重跑才能晋升；代码、数据、硬件或任务 regime 变化后重新验证 champion；
+- [ ] 将复现性、机制验证、成本、不确定度和方法家族覆盖纳入多目标选择；
+- [ ] 为 moonshot 预留显式预算；greedy policy 只允许在 `EXPLOIT` 中使用。
+
+验收指标：false-promotion rate、top-result replication rate、Pareto coverage、方法家族覆盖度和
+validated progress / cost。
+
+### A5. ResearchTeam：条件化多智能体执行平面
+
+目标是把 lead / manager / worker 内化到持久 `ResearchRun`，而不是维护第二套任务状态机。
+多智能体只在任务可分解、证据可独立或当前 regime 需要时启用；强顺序的有状态节点保持单一
+owner。
+
+- [ ] 定义 `ResearchTeam`、成员角色、父子关系、能力、局部预算、租约和取消语义；
+- [ ] Team Lead 对完整 Run 负责，Manager 管理子 DAG 和研究分支，Worker 执行具体节点；
+- [ ] team task、消息、委派、交接、shutdown 和产物全部映射到 DAG、Event 与 Artifact；
+- [ ] 支持不同模型、工具、文献视野、随机种子和上下文的异质分支；
+- [ ] 区分组织并行与证据独立，支持 blind replication 与 proposer/verifier 隔离；
+- [ ] 记录 coordination overhead、重复劳动率、分支差异度、disagreement 和错误相关性；
+- [ ] 所有 Shell、作业提交和外部副作用继续经过统一权限、预算与审计管线。
+
+验收条件：fresh process 能恢复团队、任务依赖、成员状态和预算；crash injection 后没有孤儿
+任务或重复 commit；每项产出均可追溯到 Run/Node/Agent/输入证据。
+
+### A6. 来源可追踪、可失效的记忆
+
+`Event Log + Artifact + Evidence` 是 source of truth；Memory 只是可重建、可压缩、可失效的
+派生视图，不能成为第二套事实来源。
+
+- [ ] 每条 memory 带 provenance、scope、创建版本、适用 regime、信任级别、TTL 和失效条件；
+- [ ] 隔离 session、project、branch、team 和 global scope；
+- [ ] 未验证猜测不得晋升到稳定层，Agent 也不能仅凭自己的成功声明完成 promotion；
+- [ ] 上游证据撤销后，相关 memory 立即退出 retrieval，并可由原始事件重新构建；
+- [ ] 保存负结果、失败约束和已验证恢复 recipe，减少等价死路的重复探索；
+- [ ] 检索同时检查语义相关性与前提兼容性，并服从强制 token budget。
+
+验收指标：grounded retrieval precision、撤销后 retrieval rate（目标为零）、压缩率、token 开销、
+跨分支泄漏率和避免重复实验的比例。
+
+### A7. LiteratureEvidenceProvider 与 CodebaseModelProvider
+
+二者必须是不同的 Provider，而不是混成一个通用 RAG 工具。
+
+**LiteratureEvidenceProvider**
 
 - [ ] 定义 `PaperArtifact`、`LiteratureClaim`、`CitationEdge` 和 `QuerySnapshot`；
-- [ ] 持久保存检索式、来源、获取时间、版本、过滤过程和全文/元数据摘要；
-- [ ] 区分 primary evidence、secondary synthesis 和 agent-generated interpretation；
-- [ ] 同一文献证据同时可供 hypothesis、reviewer 和 falsification Agent 使用；
-- [ ] 记录文献版本更新、撤稿、相互矛盾和来源可信状态；
-- [ ] 将文献 claim 接入依赖图，使证据撤销可以影响下游计划和结论；
-- [ ] 默认使用有效 TLS、版本固定和可重放查询，避免以不安全或不可复现的请求作为证据。
+- [ ] 保存检索式、来源、时间、版本、排序/过滤过程、paper ID、chunk 与原文位置；
+- [ ] 区分 primary evidence、secondary synthesis 和 Agent interpretation；新证据默认
+  `UNVERIFIED`；
+- [ ] 同时检索支持、反对、更新与撤回信息，并允许查询重放和漂移报告；
+- [ ] 文献版本或可信状态变化时，使下游 claim 和 memory 可被失效。
 
-### A3. CodebaseModelProvider：代码库结构模型
+**CodebaseModelProvider**
 
-代码库能力的目标不是提供另一个仓库问答工具，而是把代码结构变成实验、诊断和结论依赖
-中的正式对象。
+- [ ] 建立绑定 commit 的模块、符号、调用、import、配置、测试、入口和构建目标索引；
+- [ ] 按当前节点返回受预算约束的局部 ego-graph，而不是把整个仓库塞入上下文；
+- [ ] 将代码变更连接到实验、artifact、validator 与失败栈；
+- [ ] 支持增量重建、变更影响分析、最小相关代码选择和旧依赖失效；
+- [ ] fresh process 可以恢复同一 commit 的结构快照。
 
-- [ ] 索引模块、符号、入口、配置、测试、构建目标和版本提交；
-- [ ] 将代码符号、修改、测试和运行产物连接到 `ArtifactRecord` 与 `DependencyEdge`；
-- [ ] 支持变更影响分析、失败定位和最小受影响子图重跑；
-- [ ] 为科研 Agent 提供受预算约束的结构化上下文，而非一次性全文扫描；
-- [ ] 在 fresh process 中重建或加载同一版本的代码结构快照。
-
-### A4. Capability ABI
-
-在接入或内化外部能力前，先建立统一的能力契约。
-
-- [ ] 统一工具定义、输入输出 Schema、错误语义、权限、版本和健康检查；
-- [ ] 为 capability、plugin、agent profile 和安装目标提供稳定命名空间；
-- [ ] 禁止不同来源因相同仓库尾名或短名称覆盖彼此；
-- [ ] 能力必须通过最小可执行验证后才能进入可调度注册表；
-- [ ] 支持按需发现和激活能力，避免把全部工具说明长期塞入 Agent 上下文。
+两类 Provider 的自然语言输出都必须回落到具体 paper claim 或 code symbol；最终正确性分别由
+证据验证器与构建、测试、科学 validator 决定。
 
 ## B. 研究创新
 
@@ -208,27 +291,43 @@ independence。
 
 该方向需要真实或高质量模拟的人类反馈评测，实验成本高于前三项。
 
-## D. 暂不作为独立创新声明
+## D. Core Enabling Capabilities and Non-Claims
 
-以下能力可以建设，但不应单独宣传为研究创新：
+以下内容都是 Nexgent 必须建设和测量的核心使能能力，但不单独作为主要研究贡献：
 
-- 通用多智能体协作或角色分工；
-- 普通文献搜索、总结和代码库问答；
-- 仅记录 claim/evidence graph；
-- 通用 checkpoint、rollback 或 retry；
-- 普通长短期记忆；
-- 只根据最终分数保留最佳实验；
-- 仅把更多插件或工具暴露给模型。
+| 使能能力 | 在系统中的必要角色 | 不能采用的主张方式 |
+| --- | --- | --- |
+| `ResearchTeam` | P1 的条件化执行与组织层，P2/P3 的分支和责任载体 | “多 Agent 或增加角色即可提高科研表现” |
+| Literature / Codebase Providers | 为 P2 提供版本化证据，为 P1/P3 提供文献与代码状态 | “接入搜索、总结、RAG 或代码问答” |
+| Claim/Evidence 基础图 | P2 的类型化科学依赖数据平面 | “记录 provenance 本身保证结论正确” |
+| Aligned checkpoint / safe retry | P1 分叉、P2 replay、P3 安全恢复的共同一致性协议 | “可以聊天回退、文件快照或普通重试” |
+| Scoped invalidatable memory | 为 P1 提供历史信号，为 P2/P3 提供可撤销经验 | “加入长期记忆即可持续改进” |
+| `ExperimentLedger + CandidatePolicy` | 防止 P1 被单分数贪心选择绑架 | “只保留最终分数最高的实验” |
+| Capability ABI / dynamic shortlist | P1 `EXPAND` 与 P3 动作约束的能力面 | “向模型暴露更多插件或全部工具” |
+
+对应的主要创新仍然是：**P1 的在线饱和检测与 research-regime switching、P2 的主动 claim
+失效与最小重验证、P3 的 state-constrained recovery compilation。** 使能能力应作为系统实现、
+可靠性保证、基线与消融变量报告。
 
 ## E. 推荐实施顺序
 
-1. 完成 Capability ABI，并让 ResearchTeam 任务直接落入持久 Run/DAG；
-2. 实现最小 LiteratureEvidenceProvider 与 CodebaseModelProvider；
-3. 记录 research-progress、novelty、failure repetition 和 capability-use telemetry；
-4. 建立静态单智能体、静态多智能体和固定多样性搜索基线；
-5. 实现 P1 的规则型 regime detector 与受预算控制的分叉；
-6. 在 P1 稳定后加入 ClaimCI，作为跨分支结论与机制验证层；
-7. 将 RecoverSpec 接入模拟器，形成面向具身智能的状态约束恢复接口。
+1. 完成 `Capability ABI + Event Log + aligned checkpoint`，先建立一致、可恢复的执行底座；
+2. 建立类型化 Claim/Evidence/Artifact/Validator 基础图；
+3. 实现 `ExperimentLedger + CandidatePolicy`，建立 champion、Pareto、多样性和负结果档案；
+4. 将 `ResearchTeam` 与 scoped/provenance-backed memory 直接落入持久 Run/DAG；
+5. 实现最小 LiteratureEvidenceProvider 与 CodebaseModelProvider；
+6. 记录 research-progress、novelty、failure repetition、team diversity 和 capability-use telemetry，
+   建立单智能体、静态多智能体和固定多样性搜索基线；
+7. 实现 P1 的规则型 regime detector 与受预算控制的条件化分叉；
+8. 在 P1 trace 上加入 ClaimCI 的主动失效、memory invalidation 和选择性 replay；
+9. 将 capability action metadata、checkpoint safety 与 CodebaseModel 接入 RecoverSpec，先在科学
+   软件和模拟器中验证，再扩展到具身智能。
+
+三个最小闭环分别是：
+
+- **P1**：ResearchTeam + checkpoint/fork + memory telemetry + ExperimentLedger + Capability ABI；
+- **P2**：Claim/Evidence graph + Provider provenance + memory invalidation + selective replay；
+- **P3**：CodebaseModel + action metadata + checkpoint safety + recovery compiler。
 
 ## F. 近邻工作与实验依据
 
@@ -240,6 +339,12 @@ independence。
 - [Correct Answer, Wrong Mechanism](https://arxiv.org/abs/2606.23175)：机制不忠实及 regime-shift 检查；
 - [R2Act](https://arxiv.org/abs/2607.04623)：诊断正确与恢复动作有效之间的显著差距；
 - [AgentRewind](https://arxiv.org/abs/2608.14380)：Agent/环境对齐 checkpoint 与 rewind；
+- [Verified Tool Calls](https://arxiv.org/abs/2608.02645)：timeout 后验证、幂等键与避免重复副作用；
+- [Towards a Science of Scaling Agent Systems](https://arxiv.org/abs/2512.08296)：不同任务结构下多智能体的收益、退化与条件化组织；
+- [PaperQA2](https://arxiv.org/abs/2409.13740) 与 [OpenScholar](https://arxiv.org/abs/2411.14199)：可追踪文献检索与科学问答基线；
+- [RepoGraph](https://arxiv.org/abs/2410.14684)：版本化代码图、局部结构上下文与代码任务增益；
+- [Memory Management for LLM Agents](https://arxiv.org/abs/2505.16067)：选择性写入、删除和 naive memory growth 的退化；
+- [How Many Tools Should an LLM Agent See?](https://arxiv.org/abs/2605.24660)：动态工具短列表的覆盖率、选择准确率与上下文收益；
 - [FIRE-Bench](https://arxiv.org/abs/2602.02905)：完整科研洞见再发现评测；
 - [SciAgentArena](https://arxiv.org/abs/2606.12736)：真实科研任务中的开放探索和稳健性缺口。
 
