@@ -159,8 +159,11 @@ pip install -e ".[dev]"
 QT_QPA_PLATFORM=offscreen pytest -q
 ```
 
-桌面端说明见 [docs/desktop-gui.md](docs/desktop-gui.md)。下一阶段的能力内化、科研创新问题、
-实验基线和待办事项见 [docs/research-agent-roadmap.md](docs/research-agent-roadmap.md)。
+桌面端说明见 [docs/desktop-gui.md](docs/desktop-gui.md)。科研智能体最终定义见
+[Research Runtime Spec](docs/specs/research-runtime-spec.md)，实施顺序见
+[Roadmap](docs/research-agent-roadmap.md)，实际完成度与设计偏差见
+[Progress & Deviations](docs/research-runtime-progress.md)，正式实验须遵循
+[Evaluation Protocol](docs/specs/evaluation-protocol.md)。
 
 ## License
 

@@ -110,8 +110,10 @@ QT_QPA_PLATFORM=offscreen pytest -q
 ```
 
 完整使用说明见 [Harness README](nexgent/README.md)，桌面操作见
-[Desktop GUI](nexgent/docs/desktop-gui.md)。下一阶段的能力内化、科研创新问题、实验基线和
-待办事项见 [科研智能体路线图](nexgent/docs/research-agent-roadmap.md)。
+[Desktop GUI](nexgent/docs/desktop-gui.md)。科研智能体方向以
+[最终定义](nexgent/docs/specs/research-runtime-spec.md)为准；实施顺序见
+[路线图](nexgent/docs/research-agent-roadmap.md)，实际完成度与设计偏差见
+[进度台账](nexgent/docs/research-runtime-progress.md)。
 
 ## License
 
